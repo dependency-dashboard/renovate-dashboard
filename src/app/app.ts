@@ -8,6 +8,7 @@ import {
   GitHubIssueSearchItem,
   GitHubPullRequestDetails,
   GitHubSearchIssuesResponse,
+  GitHubRepository,
   CiStatus,
 } from './models/pull-request.model';
 import { SearchFormComponent } from './components/search-form/search-form.component';
@@ -131,6 +132,14 @@ export class App {
       const prData = await this.apiRequest<GitHubPullRequestDetails>(prUrl);
       pr.isModified = prData.commits > 1;
       pr.head.sha = prData.head.sha;
+      pr.commits = prData.commits;
+
+      // Get repository settings to determine allowed merge methods
+      const repoUrl = `https://api.github.com/repos/${pr.repoOwner}/${pr.repoName}`;
+      const repoData = await this.apiRequest<GitHubRepository>(repoUrl);
+      pr.allowSquashMerge = repoData.allow_squash_merge;
+      pr.allowMergeCommit = repoData.allow_merge_commit;
+      pr.allowRebaseMerge = repoData.allow_rebase_merge;
 
       // Get combined CI status for the PR's head commit (as a fallback)
       const statusUrl = `https://api.github.com/repos/${pr.repoOwner}/${pr.repoName}/commits/${pr.head.sha}/status`;
@@ -198,13 +207,21 @@ export class App {
   async approveAndMergePullRequest(prToUpdate: PullRequest, refreshSummary = true) {
     this.setPrProcessingState(prToUpdate, true);
     try {
+      // Check if any workflow jobs are failing
+      if (prToUpdate.workflowStatus === 'failure') {
+        throw new Error('Cannot merge PR with failing workflow checks');
+      }
+
       // Step 1: Approve
       const reviewUrl = `https://api.github.com/repos/${prToUpdate.repoOwner}/${prToUpdate.repoName}/pulls/${prToUpdate.number}/reviews`;
       await this.apiRequest<void>(reviewUrl, 'POST', { event: 'APPROVE' });
 
-      // Step 2: Merge
+      // Step 2: Determine merge method
+      const mergeMethod = this.determineMergeMethod(prToUpdate);
+
+      // Step 3: Merge with the appropriate method
       const mergeUrl = `https://api.github.com/repos/${prToUpdate.repoOwner}/${prToUpdate.repoName}/pulls/${prToUpdate.number}/merge`;
-      await this.apiRequest<void>(mergeUrl, 'PUT');
+      await this.apiRequest<void>(mergeUrl, 'PUT', { merge_method: mergeMethod });
       
       // Remove PR from UI
       this.removePrFromGroup(prToUpdate);
@@ -237,7 +254,15 @@ export class App {
       return;
     }
 
-    for (const pr of prsSnapshot) {
+    // Filter out PRs with failing workflows
+    const prsToMerge = prsSnapshot.filter(pr => pr.workflowStatus !== 'failure');
+
+    if (prsToMerge.length === 0) {
+      this.error.set('All PRs in this group have failing workflows and cannot be merged.');
+      return;
+    }
+
+    for (const pr of prsToMerge) {
       await this.approveAndMergePullRequest(pr, false);
     }
 
@@ -351,6 +376,28 @@ export class App {
       default:
         return 'unknown';
     }
+  }
+
+  private determineMergeMethod(pr: PullRequest): string {
+    const commits = pr.commits ?? 0;
+    
+    // If only one commit and rebase is supported, use rebase
+    if (commits === 1 && pr.allowRebaseMerge) {
+      return 'rebase';
+    }
+    
+    // If more than one commit and squash is supported, use squash
+    if (commits > 1 && pr.allowSquashMerge) {
+      return 'squash';
+    }
+    
+    // Otherwise if merge is supported, use merge
+    if (pr.allowMergeCommit) {
+      return 'merge';
+    }
+    
+    // If none of those work, throw an error
+    throw new Error(`No suitable merge method available for PR #${pr.number}`);
   }
 
   private bumpWorkflowSummaryRefresh(): void {

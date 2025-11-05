@@ -70,7 +70,7 @@
     </button>
     <button 
       (click)="onApproveAndMergePr()" 
-      [disabled]="pr.isProcessing" 
+      [disabled]="isMergeDisabled" 
       class="action-button bg-green-800 hover:bg-green-700 disabled:bg-gray-600 px-3 py-2 text-sm font-medium text-white rounded-md transition-colors duration-200 disabled:cursor-not-allowed"
     >
        @if(pr.isProcessing) { 

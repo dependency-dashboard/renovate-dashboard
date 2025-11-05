@@ -17,6 +17,10 @@ export class PrItemComponent {
   @Output() closePr = new EventEmitter<PullRequest>();
   @Output() approveAndMergePr = new EventEmitter<PullRequest>();
 
+  get isMergeDisabled(): boolean {
+    return this.pr.isProcessing || this.pr.workflowStatus === 'failure';
+  }
+
   onClosePr(): void {
     this.closePr.emit(this.pr);
   }

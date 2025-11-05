@@ -35,7 +35,7 @@
           type="button"
           class="px-3 py-1.5 text-sm font-medium rounded-md bg-green-800 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors duration-200"
           (click)="onApproveAndMergeGroup()"
-          [disabled]="group.prs.length === 0 || isGroupProcessing()"
+          [disabled]="group.prs.length === 0 || isGroupMergeDisabled()"
         >
           Approve & Merge All
         </button>
