@@ -45,6 +45,12 @@ export interface GitHubPullRequestDetails {
   head: { sha: string };
 }
 
+export interface GitHubRepository {
+  allow_squash_merge: boolean;
+  allow_merge_commit: boolean;
+  allow_rebase_merge: boolean;
+}
+
 export interface GitHubCheckRunsResponse {
   total_count: number;
   check_runs: CheckRun[];
@@ -70,6 +76,10 @@ export interface PullRequest {
   checkRuns: CheckRun[];
   isProcessing: boolean; // For button loading states
   workflowStatus: CiStatus;
+  commits?: number; // Number of commits in the PR
+  allowSquashMerge?: boolean;
+  allowMergeCommit?: boolean;
+  allowRebaseMerge?: boolean;
 }
 
 export interface PrGroup {
