@@ -12,6 +12,16 @@ ng serve
 
 Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
 
+## Configuration
+
+The dashboard reads the repository link displayed in the header from the `NG_APP_SOURCE_REPOSITORY_URL` environment variable. If the variable is undefined or empty, it falls back to `https://github.com/dependency-dashboard/renovate-dashboard`.
+
+To point the link at a different repository during local development, prefix your CLI commands with the variable:
+
+```bash
+NG_APP_SOURCE_REPOSITORY_URL=https://github.com/your-org/your-repo ng serve
+```
+
 ## Code scaffolding
 
 Angular CLI includes powerful code scaffolding tools. To generate a new component, run:

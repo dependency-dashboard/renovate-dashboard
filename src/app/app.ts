@@ -14,6 +14,7 @@ import {
 import { SearchFormComponent } from './components/search-form/search-form.component';
 import { PrGroupComponent } from './components/pr-group/pr-group.component';
 import { WorkflowSummaryComponent } from './workflow-summary.component';
+import { getSourceRepositoryUrl } from './config/source-repository-url';
 
 @Component({
   selector: 'app-root',
@@ -23,6 +24,7 @@ import { WorkflowSummaryComponent } from './workflow-summary.component';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class App {
+  readonly sourceRepositoryUrl = getSourceRepositoryUrl();
   // --- STATE SIGNALS ---
   organization = signal<string>('');
   token = signal<string>('');

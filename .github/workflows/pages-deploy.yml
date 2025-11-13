@@ -26,6 +26,7 @@ jobs:
     env:
       CI: true
       NG_CLI_ANALYTICS: 'false'
+      NG_APP_SOURCE_REPOSITORY_URL: https://github.com/${{ github.repository }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
