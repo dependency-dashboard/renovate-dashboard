@@ -43,6 +43,7 @@
     "@angular/compiler-cli": "^21.1.1",
     "@tailwindcss/postcss": "^4.1.13",
     "@vitest/coverage-v8": "^4.0.8",
+    "@vitest/ui": "^4.0.8",
     "angular-eslint": "21.1.0",
     "autoprefixer": "^10.4.21",
     "eslint": "^9.35.0",
