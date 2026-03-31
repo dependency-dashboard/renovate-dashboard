@@ -14,7 +14,7 @@ npm run test:coverage  # Run tests with coverage
 npm run lint           # Lint TS and HTML files
 ```
 
-To run a single test file: `npx vitest run src/app/path/to/file.spec.ts`
+To run a single test file: `npx ng test --include src/app/path/to/file.spec.ts`
 
 ## Configuration
 
