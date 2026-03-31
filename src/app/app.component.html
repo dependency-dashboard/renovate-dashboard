@@ -64,7 +64,7 @@
           </app-workflow-summary>
         </div>
         <div class="space-y-2">
-          @for (group of prGroups(); track group.title) {
+          @for (group of prGroups(); track $index) {
             <app-pr-group
               [group]="group"
               (toggleGroup)="toggleGroup($event)"
