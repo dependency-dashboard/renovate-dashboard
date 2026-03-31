@@ -48,21 +48,33 @@ This will compile your project and store the build artifacts in the `dist/` dire
 
 ## Running unit tests
 
-To execute unit tests with the [Karma](https://karma-runner.github.io) test runner, use the following command:
+Unit tests run with [Vitest](https://vitest.dev) via Angular 21's native `@angular/build:unit-test` builder:
 
 ```bash
-ng test
+npm test                  # Run tests once
+npm run test:watch        # Run tests in watch mode
+npm run test:coverage     # Run tests with coverage report
 ```
 
-## Running end-to-end tests
-
-For end-to-end (e2e) testing, run:
+To run a single test file:
 
 ```bash
-ng e2e
+npx ng test --include src/app/path/to/file.spec.ts
 ```
 
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
+## GitHub token scopes
+
+The app requires a GitHub personal access token (PAT). The token field accepts:
+
+**Classic PAT** — enable these scopes:
+- `repo` — read repository and pull request data
+- `workflow` — read GitHub Actions check runs
+
+**Fine-grained PAT** — grant these repository permissions:
+- `Contents: Read`
+- `Pull requests: Write`
+- `Checks: Read`
+- `Metadata: Read`
 
 ## Additional Resources
 
