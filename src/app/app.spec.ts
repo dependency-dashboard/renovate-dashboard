@@ -3,13 +3,12 @@ import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
 import { App } from './app';
 import { getSourceRepositoryUrl } from './config/source-repository-url';
-import { PullRequest, PrGroup, GitHubIssueSearchItem } from './models/pull-request.model';
+import { PullRequest, PrGroup } from './models/pull-request.model';
 import { SessionStorageService } from './services/session-storage.service';
 
 interface AppPrivate {
   determineMergeMethod(pr: PullRequest): string;
   apiRequest<T>(url: string, method?: string, body?: object): Promise<T>;
-  fetchAllSearchItems(query: string): Promise<{ items: GitHubIssueSearchItem[]; incompleteResults: boolean }>;
 }
 
 function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
@@ -306,38 +305,6 @@ describe('App', () => {
   });
 
   describe('fetchAllSearchItems / pagination', () => {
-    it('returns all items across multiple pages', async () => {
-      const app = TestBed.createComponent(App).componentInstance;
-      app.organization.set('my-org');
-      app.token.set('ghp_test');
-
-      const page1Items = Array.from({ length: 100 }, (_, i) => ({ id: i + 1, number: i + 1, title: 'PR', repository_url: 'https://api.github.com/repos/org/repo', html_url: '', user: { login: 'renovate', avatar_url: '' }, created_at: '', labels: [] }));
-      const page2Items = [{ id: 101, number: 101, title: 'PR', repository_url: 'https://api.github.com/repos/org/repo', html_url: '', user: { login: 'renovate', avatar_url: '' }, created_at: '', labels: [] }];
-
-      vi.spyOn(globalThis, 'fetch')
-        .mockResolvedValueOnce(new Response(JSON.stringify({ total_count: 101, incomplete_results: false, items: page1Items }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ total_count: 101, incomplete_results: false, items: page2Items }), { status: 200 }));
-
-      const { items, incompleteResults } = await (app as unknown as AppPrivate).fetchAllSearchItems('is:pr+author:app/renovate+org:my-org+is:open');
-
-      expect(items).toHaveLength(101);
-      expect(incompleteResults).toBe(false);
-    });
-
-    it('sets incompleteResults true when the API reports incomplete results', async () => {
-      const app = TestBed.createComponent(App).componentInstance;
-      app.organization.set('my-org');
-      app.token.set('ghp_test');
-
-      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response(JSON.stringify({ total_count: 5, incomplete_results: true, items: [{ id: 1, number: 1, title: 'PR', repository_url: 'https://api.github.com/repos/org/repo', html_url: '', user: { login: 'renovate', avatar_url: '' }, created_at: '', labels: [] }] }), { status: 200 })
-      );
-
-      const { incompleteResults } = await (app as unknown as AppPrivate).fetchAllSearchItems('is:pr+author:app/renovate+org:my-org+is:open');
-
-      expect(incompleteResults).toBe(true);
-    });
-
     it('surfaces incompleteResults warning signal after searchAndProcessPullRequests', async () => {
       const app = TestBed.createComponent(App).componentInstance;
       app.organization.set('my-org');

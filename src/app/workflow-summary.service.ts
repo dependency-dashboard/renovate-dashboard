@@ -1,12 +1,12 @@
-import { Injectable } from '@angular/core';
+import { inject, Injectable } from '@angular/core';
 import {
   CiStatus,
   GitHubCheckRunsResponse,
   GitHubCombinedStatusResponse,
   GitHubIssueSearchItem,
   GitHubPullRequestDetails,
-  GitHubSearchIssuesResponse,
 } from './models/pull-request.model';
+import { GitHubSearchService } from './services/github-search.service';
 
 export interface WorkflowSummary {
   success: number;
@@ -17,7 +17,8 @@ export interface WorkflowSummary {
 
 @Injectable({ providedIn: 'root' })
 export class WorkflowSummaryService {
-  
+  private githubSearch = inject(GitHubSearchService);
+
   async getSummary(organization: string, token: string): Promise<WorkflowSummary> {
     if (!organization || !token) {
       return { success: 0, pending: 0, failed: 0 };
@@ -31,41 +32,8 @@ export class WorkflowSummaryService {
     }
   }
 
-  private async fetchAllSearchItems(query: string, token: string): Promise<{ items: GitHubIssueSearchItem[]; incompleteResults: boolean }> {
-    const headers = {
-      'Accept': 'application/vnd.github.v3+json',
-      'Authorization': `token ${token}`
-    };
-    const allItems: GitHubIssueSearchItem[] = [];
-    let incompleteResults = false;
-    let page = 1;
-
-    while (page <= 10) {
-      const params = new URLSearchParams({ q: query, per_page: '100', page: String(page) });
-      const url = `https://api.github.com/search/issues?${params.toString()}`;
-      const response = await fetch(url, { headers });
-      if (!response.ok) {
-        throw new Error(`Failed to search PRs: ${response.status}`);
-      }
-      const data = await response.json() as GitHubSearchIssuesResponse;
-      allItems.push(...data.items);
-      if (data.incomplete_results) {
-        incompleteResults = true;
-      }
-      if (data.items.length < 100 || allItems.length >= data.total_count) {
-        break;
-      }
-      page++;
-      if (page > 10) {
-        incompleteResults = true;
-      }
-    }
-
-    return { items: allItems, incompleteResults };
-  }
-
   private async fetchWorkflowSummary(organization: string, token: string): Promise<WorkflowSummary> {
-    const { items, incompleteResults } = await this.fetchAllSearchItems(
+    const { items, incompleteResults } = await this.githubSearch.fetchAllSearchItems(
       `is:pr author:app/renovate org:${organization} is:open`,
       token
     );

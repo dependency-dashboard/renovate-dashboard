@@ -6,7 +6,6 @@ import {
   GitHubCombinedStatusResponse,
   GitHubIssueSearchItem,
   GitHubPullRequestDetails,
-  GitHubSearchIssuesResponse,
   GitHubRepository,
   CiStatus,
 } from './models/pull-request.model';
@@ -15,6 +14,7 @@ import { PrGroupComponent } from './components/pr-group/pr-group.component';
 import { WorkflowSummaryComponent } from './workflow-summary.component';
 import { getSourceRepositoryUrl } from './config/source-repository-url';
 import { SessionStorageService, SESSION_KEYS } from './services/session-storage.service';
+import { GitHubSearchService } from './services/github-search.service';
 
 @Component({
   selector: 'app-root',
@@ -25,6 +25,7 @@ import { SessionStorageService, SESSION_KEYS } from './services/session-storage.
 export class App {
   readonly sourceRepositoryUrl = getSourceRepositoryUrl();
   private storage = inject(SessionStorageService);
+  private githubSearch = inject(GitHubSearchService);
 
   // --- STATE SIGNALS ---
   organization = signal<string>(this.storage.get(SESSION_KEYS.organization));
@@ -60,8 +61,9 @@ export class App {
 
     try {
       // Step 1: Search for all open PRs by Renovate in the org (auto-paginated)
-      const { items, incompleteResults } = await this.fetchAllSearchItems(
-        `is:pr+author:app/renovate+org:${orgVal}+is:open`
+      const { items, incompleteResults } = await this.githubSearch.fetchAllSearchItems(
+        `is:pr author:app/renovate org:${orgVal} is:open`,
+        tokenVal
       );
       this.incompleteResults.set(incompleteResults);
 
@@ -284,33 +286,6 @@ export class App {
   }
 
   // --- HELPER & UTILITY METHODS ---
-
-  private async fetchAllSearchItems(query: string): Promise<{ items: GitHubIssueSearchItem[]; incompleteResults: boolean }> {
-    const allItems: GitHubIssueSearchItem[] = [];
-    let incompleteResults = false;
-    let page = 1;
-
-    while (page <= 10) {
-      const params = new URLSearchParams({ q: query, per_page: '100', page: String(page) });
-      const url = `https://api.github.com/search/issues?${params.toString()}`;
-      const result = await this.apiRequest<GitHubSearchIssuesResponse>(url);
-
-      allItems.push(...result.items);
-      if (result.incomplete_results) {
-        incompleteResults = true;
-      }
-
-      if (result.items.length < 100 || allItems.length >= result.total_count) {
-        break;
-      }
-      page++;
-      if (page > 10) {
-        incompleteResults = true;
-      }
-    }
-
-    return { items: allItems, incompleteResults };
-  }
 
   private async apiRequest<T>(url: string, method = 'GET', body?: object): Promise<T> {
     const headers: HeadersInit = {
