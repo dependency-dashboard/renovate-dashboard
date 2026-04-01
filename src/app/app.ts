@@ -1,5 +1,4 @@
 import { ChangeDetectionStrategy, Component, signal, computed } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import {
   PrGroup,
   PullRequest,
@@ -18,8 +17,7 @@ import { getSourceRepositoryUrl } from './config/source-repository-url';
 
 @Component({
   selector: 'app-root',
-  standalone: true,
-  imports: [CommonModule, SearchFormComponent, PrGroupComponent, WorkflowSummaryComponent],
+  imports: [SearchFormComponent, PrGroupComponent, WorkflowSummaryComponent],
   templateUrl: './app.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

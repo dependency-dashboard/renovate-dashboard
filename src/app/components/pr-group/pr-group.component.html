@@ -5,29 +5,29 @@
       type="button"
       class="flex items-center space-x-4 flex-1 min-w-0 text-left hover:text-white transition-colors duration-200"
       (click)="onToggleGroup()"
-      [attr.aria-expanded]="group.isExpanded"
+      [attr.aria-expanded]="group().isExpanded"
     >
-      <span [innerHTML]="getCIStatusIcon(group.aggregateCiStatus)"></span>
-      <span class="font-semibold truncate pr-4">{{ group.title }}</span>
-      <svg class="w-6 h-6 text-gray-400 transition-transform duration-300" [class.rotate-180]="group.isExpanded" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+      <span [innerHTML]="getCIStatusIcon(group().aggregateCiStatus)"></span>
+      <span class="font-semibold truncate pr-4">{{ group().title }}</span>
+      <svg class="w-6 h-6 text-gray-400 transition-transform duration-300" [class.rotate-180]="group().isExpanded" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
     </button>
     <div class="flex items-center gap-4 flex-wrap justify-end">
       <!-- Workflow Summary for Group -->
       <span class="flex items-center space-x-2 text-sm">
         <span class="text-green-400">✅</span>
-        <span class="text-gray-300">{{ group.workflowSummary.success }}</span>
+        <span class="text-gray-300">{{ group().workflowSummary.success }}</span>
         <span class="text-yellow-400">⏳</span>
-        <span class="text-gray-300">{{ group.workflowSummary.pending }}</span>
+        <span class="text-gray-300">{{ group().workflowSummary.pending }}</span>
         <span class="text-red-400">❌</span>
-        <span class="text-gray-300">{{ group.workflowSummary.failed }}</span>
+        <span class="text-gray-300">{{ group().workflowSummary.failed }}</span>
       </span>
-      <span class="bg-gray-700 text-gray-300 text-sm font-bold px-3 py-1 rounded-full">{{ group.prs.length }} PRs</span>
+      <span class="bg-gray-700 text-gray-300 text-sm font-bold px-3 py-1 rounded-full">{{ group().prs.length }} PRs</span>
       <div class="flex gap-2">
         <button
           type="button"
           class="px-3 py-1.5 text-sm font-medium rounded-md bg-red-800 hover:bg-red-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors duration-200"
           (click)="onCloseGroup()"
-          [disabled]="group.prs.length === 0 || isGroupProcessing()"
+          [disabled]="group().prs.length === 0 || isGroupProcessing()"
         >
           Close All
         </button>
@@ -35,7 +35,7 @@
           type="button"
           class="px-3 py-1.5 text-sm font-medium rounded-md bg-green-800 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors duration-200"
           (click)="onApproveAndMergeGroup()"
-          [disabled]="group.prs.length === 0 || isGroupMergeDisabled()"
+          [disabled]="group().prs.length === 0 || isGroupMergeDisabled()"
         >
           Approve & Merge All
         </button>
@@ -45,11 +45,11 @@
   
   <!-- Expanded Content: List of PRs in Group -->
   <div class="border-t border-gray-700">
-    @if(group.isExpanded) {
-      @for (pr of group.prs; track pr.id) {
-        <app-pr-item 
-          [pr]="pr" 
-          [expanded]="expandedPrIds.has(pr.id)"
+    @if(group().isExpanded) {
+      @for (pr of group().prs; track pr.id) {
+        <app-pr-item
+          [pr]="pr"
+          [expanded]="expandedPrIds().has(pr.id)"
           (toggleExpanded)="togglePrExpansion(pr)"
           (closePr)="onClosePr($event)"
           (approveAndMergePr)="onApproveAndMergePr($event)">

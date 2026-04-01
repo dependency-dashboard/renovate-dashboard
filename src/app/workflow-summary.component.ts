@@ -1,32 +1,30 @@
-import { Component, Input, effect, signal, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { ChangeDetectionStrategy, Component, effect, input, signal, inject, untracked } from '@angular/core';
 import { WorkflowSummaryService, WorkflowSummary } from './workflow-summary.service';
 
 @Component({
   selector: 'app-workflow-summary',
-  standalone: true,
-  imports: [CommonModule],
+  imports: [],
   templateUrl: './workflow-summary.component.html',
-  styleUrls: ['./workflow-summary.component.css']
+  styleUrls: ['./workflow-summary.component.css'],
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class WorkflowSummaryComponent {
   private summaryService = inject(WorkflowSummaryService);
 
-  @Input() organization = '';
-  @Input() token = '';
-  @Input() refreshTrigger = 0;
-  
+  organization = input('');
+  token = input('');
+  refreshTrigger = input(0);
+
   summary = signal<WorkflowSummary>({ success: 0, pending: 0, failed: 0 });
   isLoading = signal<boolean>(false);
 
   constructor() {
-    // Effect to load summary when inputs change
     effect(() => {
-      const org = this.organization;
-      const tkn = this.token;
-      const trigger = this.refreshTrigger;
-      
-      if (org && tkn && trigger > 0) {
+      const org = this.organization();
+      const tkn = this.token();
+      const trigger = this.refreshTrigger();
+
+      if (org && tkn && trigger > 0 && !untracked(this.isLoading)) {
         void this.loadSummary(org, tkn);
       }
     });
