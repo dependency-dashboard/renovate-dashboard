@@ -115,9 +115,12 @@ export class App {
         groupsMap.get(pr.title)!.prs.push(pr);
       });
 
-      // Step 3: Fetch detailed data for each PR in parallel
+      // Step 3: Fetch detailed data for each PR in batches to avoid secondary rate limits
       const allPrs = Array.from(groupsMap.values()).flatMap(g => g.prs);
-  await Promise.all(allPrs.map(pr => this.fetchPrDetails(pr)));
+      const BATCH_SIZE = 10;
+      for (let i = 0; i < allPrs.length; i += BATCH_SIZE) {
+        await Promise.all(allPrs.slice(i, i + BATCH_SIZE).map(pr => this.fetchPrDetails(pr)));
+      }
 
       // Step 4: Calculate aggregate status and workflow summary for each group
       groupsMap.forEach(group => {
