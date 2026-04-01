@@ -22,7 +22,14 @@ export class GitHubSearchService {
       const url = `https://api.github.com/search/issues?${params.toString()}`;
       const response = await fetch(url, { headers });
       if (!response.ok) {
-        throw new Error(`GitHub search failed: ${response.status}`);
+        let errorMessage = response.statusText
+          ? `GitHub search failed: ${response.status} ${response.statusText}`
+          : `GitHub search failed: ${response.status}`;
+        try {
+          const errorBody = await response.json() as { message?: string };
+          if (errorBody.message) { errorMessage = errorBody.message; }
+        } catch { /* non-JSON body */ }
+        throw new Error(errorMessage);
       }
       const data = await response.json() as GitHubSearchIssuesResponse;
       allItems.push(...data.items);

@@ -1,7 +1,7 @@
 <div class="workflow-summary">
   @if (isLoading()) {
     <span class="loading">Loading workflow status...</span>
-  } @else if (summary().success > 0 || summary().pending > 0 || summary().failed > 0) {
+  } @else if (summary().success > 0 || summary().pending > 0 || summary().failed > 0 || summary().incompleteResults) {
     <span title="Successful workflows" class="icon success">✅</span>
     <span class="count">{{ summary().success }}</span>
     <span title="Pending workflows" class="icon pending">⏳</span>

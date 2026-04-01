@@ -73,10 +73,18 @@ describe('GitHubSearchService', () => {
     expect(incompleteResults).toBe(true);
   });
 
-  it('throws when the API returns a non-ok response', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('', { status: 401 }));
+  it('throws with status and statusText on non-ok response', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('', { status: 403, statusText: 'Forbidden' }));
 
-    await expect(service.fetchAllSearchItems(QUERY, TOKEN)).rejects.toThrow('GitHub search failed: 401');
+    await expect(service.fetchAllSearchItems(QUERY, TOKEN)).rejects.toThrow('GitHub search failed: 403 Forbidden');
+  });
+
+  it('uses the JSON error message when the body contains one', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ message: 'Bad credentials' }), { status: 401, statusText: 'Unauthorized' })
+    );
+
+    await expect(service.fetchAllSearchItems(QUERY, TOKEN)).rejects.toThrow('Bad credentials');
   });
 
   it('uses space-separated query terms (not + signs) when building the URL', async () => {
