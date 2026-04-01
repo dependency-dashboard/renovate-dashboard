@@ -49,9 +49,12 @@ export class App {
     this.error.set(null);
     this.prGroups.set([]);
     this.searched.set(true);
-    const orgVal = this.organization();
+    const orgVal = this.organization().trim();
+    const tokenVal = this.token().trim();
+    this.organization.set(orgVal);
+    this.token.set(tokenVal);
     this.storage.set('organization', orgVal);
-    this.storage.set('token', this.token());
+    this.storage.set('token', tokenVal);
 
     try {
       // Step 1: Search for all open PRs by Renovate in the org

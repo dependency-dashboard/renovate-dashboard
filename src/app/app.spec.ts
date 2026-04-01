@@ -368,5 +368,25 @@ describe('App', () => {
       expect(storageSpy.set).toHaveBeenCalledWith('organization', 'my-org');
       expect(storageSpy.set).toHaveBeenCalledWith('token', 'ghp_test');
     });
+
+    it('trims whitespace from organization and token before persisting and searching', async () => {
+      const storageSpy = { get: vi.fn(() => ''), set: vi.fn() };
+      TestBed.overrideProvider(SessionStorageService, { useValue: storageSpy });
+
+      const app = TestBed.createComponent(App).componentInstance;
+      app.organization.set('  my-org  ');
+      app.token.set('  ghp_test  ');
+
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(JSON.stringify({ total_count: 0, incomplete_results: false, items: [] }), { status: 200 })
+      );
+
+      await app.searchAndProcessPullRequests();
+
+      expect(app.organization()).toBe('my-org');
+      expect(app.token()).toBe('ghp_test');
+      expect(storageSpy.set).toHaveBeenCalledWith('organization', 'my-org');
+      expect(storageSpy.set).toHaveBeenCalledWith('token', 'ghp_test');
+    });
   });
 });
