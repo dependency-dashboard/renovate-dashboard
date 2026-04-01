@@ -4,6 +4,7 @@ import { vi } from 'vitest';
 import { App } from './app';
 import { getSourceRepositoryUrl } from './config/source-repository-url';
 import { PullRequest, PrGroup } from './models/pull-request.model';
+import { SessionStorageService } from './services/session-storage.service';
 
 interface AppPrivate {
   determineMergeMethod(pr: PullRequest): string;
@@ -336,6 +337,48 @@ describe('App', () => {
 
       const result = await (app as unknown as AppPrivate).apiRequest('https://api.github.com/test', 'PUT');
       expect(result).toBeUndefined();
+    });
+  });
+
+  describe('sessionStorage persistence', () => {
+    it('restores organization and token from session storage on init', async () => {
+      const storageSpy = { get: vi.fn((key: string) => key === 'organization' ? 'saved-org' : 'saved-token'), set: vi.fn() };
+      await TestBed.configureTestingModule({
+        imports: [App],
+        providers: [
+          provideZonelessChangeDetection(),
+          { provide: SessionStorageService, useValue: storageSpy },
+        ],
+      }).compileComponents();
+
+      const app = TestBed.createComponent(App).componentInstance;
+
+      expect(app.organization()).toBe('saved-org');
+      expect(app.token()).toBe('saved-token');
+    });
+
+    it('persists organization and token to session storage on search', async () => {
+      const storageSpy = { get: vi.fn(() => ''), set: vi.fn() };
+      await TestBed.configureTestingModule({
+        imports: [App],
+        providers: [
+          provideZonelessChangeDetection(),
+          { provide: SessionStorageService, useValue: storageSpy },
+        ],
+      }).compileComponents();
+
+      const app = TestBed.createComponent(App).componentInstance;
+      app.organization.set('my-org');
+      app.token.set('ghp_test');
+
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(JSON.stringify({ total_count: 0, incomplete_results: false, items: [] }), { status: 200 })
+      );
+
+      await app.searchAndProcessPullRequests();
+
+      expect(storageSpy.set).toHaveBeenCalledWith('organization', 'my-org');
+      expect(storageSpy.set).toHaveBeenCalledWith('token', 'ghp_test');
     });
   });
 });

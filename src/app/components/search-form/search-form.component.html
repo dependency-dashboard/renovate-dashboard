@@ -17,14 +17,15 @@
   <!-- GitHub Token Input -->
   <div>
     <label for="token" class="block text-sm font-medium text-gray-300 mb-2">GitHub Personal Access Token</label>
-    <input 
-      id="token" 
-      type="password" 
+    <input
+      id="token"
+      type="password"
       [value]="token()"
       (input)="onTokenChange($event)"
-      placeholder="Token with 'repo' scope is required" 
+      placeholder="Token with 'repo' scope is required"
       class="w-full bg-gray-900 border border-gray-600 rounded-md px-4 py-2 text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:outline-none transition duration-200"
     />
+    <p class="mt-1 text-xs text-gray-500">Stored for this session only — cleared when the tab is closed.</p>
   </div>
 </div>
 
