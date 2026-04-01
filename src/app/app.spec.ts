@@ -341,15 +341,9 @@ describe('App', () => {
   });
 
   describe('sessionStorage persistence', () => {
-    it('restores organization and token from session storage on init', async () => {
+    it('restores organization and token from session storage on init', () => {
       const storageSpy = { get: vi.fn((key: string) => key === 'organization' ? 'saved-org' : 'saved-token'), set: vi.fn() };
-      await TestBed.configureTestingModule({
-        imports: [App],
-        providers: [
-          provideZonelessChangeDetection(),
-          { provide: SessionStorageService, useValue: storageSpy },
-        ],
-      }).compileComponents();
+      TestBed.overrideProvider(SessionStorageService, { useValue: storageSpy });
 
       const app = TestBed.createComponent(App).componentInstance;
 
@@ -359,13 +353,7 @@ describe('App', () => {
 
     it('persists organization and token to session storage on search', async () => {
       const storageSpy = { get: vi.fn(() => ''), set: vi.fn() };
-      await TestBed.configureTestingModule({
-        imports: [App],
-        providers: [
-          provideZonelessChangeDetection(),
-          { provide: SessionStorageService, useValue: storageSpy },
-        ],
-      }).compileComponents();
+      TestBed.overrideProvider(SessionStorageService, { useValue: storageSpy });
 
       const app = TestBed.createComponent(App).componentInstance;
       app.organization.set('my-org');
