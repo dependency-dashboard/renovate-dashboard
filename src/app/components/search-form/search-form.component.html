@@ -1,4 +1,5 @@
 <!-- Input Form Section -->
+<form (ngSubmit)="onSearch()">
 <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
   <!-- Organization Input -->
   <div>
@@ -29,8 +30,8 @@
 
 <!-- Action Button -->
 <div class="flex justify-center mb-8">
-  <button 
-    (click)="onSearch()" 
+  <button
+    type="submit"
     [disabled]="isLoading || !formValid"
     class="px-8 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 transition-all duration-300 transform hover:scale-105 disabled:scale-100"
   >
@@ -45,3 +46,4 @@
     }
   </button>
 </div>
+</form>
