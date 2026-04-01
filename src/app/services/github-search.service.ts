@@ -15,9 +15,8 @@ export class GitHubSearchService {
     };
     const allItems: GitHubIssueSearchItem[] = [];
     let incompleteResults = false;
-    let page = 1;
 
-    while (page <= 10) {
+    for (let page = 1; page <= 10; page++) {
       const params = new URLSearchParams({ q: query, per_page: '100', page: String(page) });
       const url = `https://api.github.com/search/issues?${params.toString()}`;
       const response = await fetch(url, { headers });
@@ -39,8 +38,8 @@ export class GitHubSearchService {
       if (data.items.length < 100 || allItems.length >= data.total_count) {
         break;
       }
-      page++;
-      if (page > 10) {
+      // Reached the 10-page (1000-result) cap with more results remaining
+      if (page === 10) {
         incompleteResults = true;
       }
     }

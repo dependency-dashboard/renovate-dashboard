@@ -356,6 +356,27 @@ describe('App', () => {
     });
   });
 
+  describe('incomplete results banner', () => {
+    it('renders the warning banner when incompleteResults is true', async () => {
+      const fixture = TestBed.createComponent(App);
+      const app = fixture.componentInstance;
+      app.organization.set('my-org');
+      app.token.set('ghp_test');
+      app.incompleteResults.set(true);
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.textContent).toContain('incomplete results');
+    });
+
+    it('does not render the warning banner when incompleteResults is false', async () => {
+      const fixture = TestBed.createComponent(App);
+      fixture.componentInstance.incompleteResults.set(false);
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.textContent).not.toContain('incomplete results');
+    });
+  });
+
   describe('sessionStorage persistence', () => {
     it('restores organization and token from session storage on init', () => {
       const storageSpy = { get: vi.fn((key: string) => key === 'organization' ? 'saved-org' : 'saved-token'), set: vi.fn() };
