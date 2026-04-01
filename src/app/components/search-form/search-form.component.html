@@ -19,8 +19,19 @@
     <div class="flex items-center gap-1.5 mb-2">
       <label for="token" class="text-sm font-medium text-gray-300">GitHub Personal Access Token</label>
       <div class="relative group">
-        <svg class="w-4 h-4 text-gray-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-label="Token storage info"><circle cx="12" cy="12" r="10" stroke-width="2"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 16v-4m0-4h.01"/></svg>
-        <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 rounded-md bg-gray-900 border border-gray-600 px-3 py-2 text-xs text-gray-300 shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150 z-10" role="tooltip">
+        <button
+          type="button"
+          class="w-4 h-4 text-gray-500 cursor-help focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-full flex items-center justify-center"
+          aria-label="Token storage info"
+          aria-describedby="token-tooltip"
+        >
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke-width="2"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 16v-4m0-4h.01"/></svg>
+        </button>
+        <div
+          id="token-tooltip"
+          class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 rounded-md bg-gray-900 border border-gray-600 px-3 py-2 text-xs text-gray-300 shadow-lg opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none transition-opacity duration-150 z-10"
+          role="tooltip"
+        >
           Stored for this session only — cleared when the tab is closed.
         </div>
       </div>
