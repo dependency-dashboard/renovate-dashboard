@@ -304,6 +304,22 @@ describe('App', () => {
     });
   });
 
+  describe('fetchAllSearchItems / pagination', () => {
+    it('surfaces incompleteResults warning signal after searchAndProcessPullRequests', async () => {
+      const app = TestBed.createComponent(App).componentInstance;
+      app.organization.set('my-org');
+      app.token.set('ghp_test');
+
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+        new Response(JSON.stringify({ total_count: 1, incomplete_results: true, items: [] }), { status: 200 })
+      );
+
+      await app.searchAndProcessPullRequests();
+
+      expect(app.incompleteResults()).toBe(true);
+    });
+  });
+
   describe('apiRequest error handling', () => {
     it('throws with the API error message on non-ok response', async () => {
       const app = TestBed.createComponent(App).componentInstance;
@@ -337,6 +353,27 @@ describe('App', () => {
 
       const result = await (app as unknown as AppPrivate).apiRequest('https://api.github.com/test', 'PUT');
       expect(result).toBeUndefined();
+    });
+  });
+
+  describe('incomplete results banner', () => {
+    it('renders the warning banner when incompleteResults is true', async () => {
+      const fixture = TestBed.createComponent(App);
+      const app = fixture.componentInstance;
+      app.organization.set('my-org');
+      app.token.set('ghp_test');
+      app.incompleteResults.set(true);
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.textContent).toContain('incomplete results');
+    });
+
+    it('does not render the warning banner when incompleteResults is false', async () => {
+      const fixture = TestBed.createComponent(App);
+      fixture.componentInstance.incompleteResults.set(false);
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.textContent).not.toContain('incomplete results');
     });
   });
 

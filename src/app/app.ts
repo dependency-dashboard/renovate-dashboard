@@ -6,7 +6,6 @@ import {
   GitHubCombinedStatusResponse,
   GitHubIssueSearchItem,
   GitHubPullRequestDetails,
-  GitHubSearchIssuesResponse,
   GitHubRepository,
   CiStatus,
 } from './models/pull-request.model';
@@ -15,6 +14,7 @@ import { PrGroupComponent } from './components/pr-group/pr-group.component';
 import { WorkflowSummaryComponent } from './workflow-summary.component';
 import { getSourceRepositoryUrl } from './config/source-repository-url';
 import { SessionStorageService, SESSION_KEYS } from './services/session-storage.service';
+import { GitHubSearchService } from './services/github-search.service';
 
 @Component({
   selector: 'app-root',
@@ -25,6 +25,7 @@ import { SessionStorageService, SESSION_KEYS } from './services/session-storage.
 export class App {
   readonly sourceRepositoryUrl = getSourceRepositoryUrl();
   private storage = inject(SessionStorageService);
+  private githubSearch = inject(GitHubSearchService);
 
   // --- STATE SIGNALS ---
   organization = signal<string>(this.storage.get(SESSION_KEYS.organization));
@@ -32,6 +33,7 @@ export class App {
   prGroups = signal<PrGroup[]>([]);
   isLoading = signal<boolean>(false);
   error = signal<string | null>(null);
+  incompleteResults = signal<boolean>(false);
   searched = signal<boolean>(false);
   workflowRefreshTrigger = signal<number>(0);
   expandedPrIds = signal<Set<number>>(new Set());
@@ -48,6 +50,7 @@ export class App {
     this.isLoading.set(true);
     this.error.set(null);
     this.prGroups.set([]);
+    this.incompleteResults.set(false);
     this.searched.set(true);
     const orgVal = this.organization().trim();
     const tokenVal = this.token().trim();
@@ -57,14 +60,19 @@ export class App {
     this.storage.set(SESSION_KEYS.token, tokenVal);
 
     try {
-      // Step 1: Search for all open PRs by Renovate in the org
-      const searchUrl = `https://api.github.com/search/issues?q=is:pr+author:app/renovate+org:${orgVal}+is:open&per_page=100`;
-      const searchResult = await this.apiRequest<GitHubSearchIssuesResponse>(searchUrl);
-      
-      if (searchResult.items.length === 0) {
+      // Step 1: Search for all open PRs by Renovate in the org (auto-paginated)
+      const { items, incompleteResults } = await this.githubSearch.fetchAllSearchItems(
+        `is:pr author:app/renovate org:${orgVal} is:open`,
+        tokenVal
+      );
+      this.incompleteResults.set(incompleteResults);
+
+      if (items.length === 0) {
         this.prGroups.set([]);
         return;
       }
+
+      const searchResult = { items };
 
       // Step 2: Group PRs by title
       const groupsMap = new Map<string, PrGroup>();
@@ -107,9 +115,12 @@ export class App {
         groupsMap.get(pr.title)!.prs.push(pr);
       });
 
-      // Step 3: Fetch detailed data for each PR in parallel
+      // Step 3: Fetch detailed data for each PR in batches to avoid secondary rate limits
       const allPrs = Array.from(groupsMap.values()).flatMap(g => g.prs);
-  await Promise.all(allPrs.map(pr => this.fetchPrDetails(pr)));
+      const BATCH_SIZE = 10;
+      for (let i = 0; i < allPrs.length; i += BATCH_SIZE) {
+        await Promise.all(allPrs.slice(i, i + BATCH_SIZE).map(pr => this.fetchPrDetails(pr)));
+      }
 
       // Step 4: Calculate aggregate status and workflow summary for each group
       groupsMap.forEach(group => {

@@ -97,6 +97,30 @@ describe('WorkflowSummaryComponent', () => {
     expect(summaryServiceSpy.getSummary).not.toHaveBeenCalled();
   });
 
+  it('renders the warning indicator when incompleteResults is true', async () => {
+    const fixture = TestBed.createComponent(WorkflowSummaryComponent);
+    fixture.componentInstance.summary.set({ success: 3, pending: 1, failed: 2, incompleteResults: true });
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[title*="incomplete"]')).not.toBeNull();
+  });
+
+  it('does not render the warning indicator when incompleteResults is false', async () => {
+    const fixture = TestBed.createComponent(WorkflowSummaryComponent);
+    fixture.componentInstance.summary.set({ success: 3, pending: 1, failed: 2, incompleteResults: false });
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[title*="incomplete"]')).toBeNull();
+  });
+
+  it('renders the warning indicator when all counts are zero but incompleteResults is true', async () => {
+    const fixture = TestBed.createComponent(WorkflowSummaryComponent);
+    fixture.componentInstance.summary.set({ success: 0, pending: 0, failed: 0, incompleteResults: true });
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[title*="incomplete"]')).not.toBeNull();
+  });
+
   it('resets summary to zeros on service error', async () => {
     summaryServiceSpy.getSummary.mockRejectedValueOnce(new Error('Network error'));
 

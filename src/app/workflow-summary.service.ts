@@ -1,22 +1,24 @@
-import { Injectable } from '@angular/core';
+import { inject, Injectable } from '@angular/core';
 import {
   CiStatus,
   GitHubCheckRunsResponse,
   GitHubCombinedStatusResponse,
   GitHubIssueSearchItem,
   GitHubPullRequestDetails,
-  GitHubSearchIssuesResponse,
 } from './models/pull-request.model';
+import { GitHubSearchService } from './services/github-search.service';
 
 export interface WorkflowSummary {
   success: number;
   pending: number;
   failed: number;
+  incompleteResults?: boolean;
 }
 
 @Injectable({ providedIn: 'root' })
 export class WorkflowSummaryService {
-  
+  private githubSearch = inject(GitHubSearchService);
+
   async getSummary(organization: string, token: string): Promise<WorkflowSummary> {
     if (!organization || !token) {
       return { success: 0, pending: 0, failed: 0 };
@@ -31,24 +33,13 @@ export class WorkflowSummaryService {
   }
 
   private async fetchWorkflowSummary(organization: string, token: string): Promise<WorkflowSummary> {
-    // First, get all Renovate PRs for the organization
-    const searchUrl = `https://api.github.com/search/issues?q=is:pr+author:app/renovate+org:${organization}+is:open&per_page=100`;
-    
-    const searchResponse = await fetch(searchUrl, {
-      headers: {
-        'Accept': 'application/vnd.github.v3+json',
-        'Authorization': `token ${token}`
-      }
-    });
+    const { items, incompleteResults } = await this.githubSearch.fetchAllSearchItems(
+      `is:pr author:app/renovate org:${organization} is:open`,
+      token
+    );
 
-    if (!searchResponse.ok) {
-      throw new Error(`Failed to search PRs: ${searchResponse.status}`);
-    }
-
-  const searchData = await searchResponse.json() as GitHubSearchIssuesResponse;
-    
-    if (!searchData.items || searchData.items.length === 0) {
-      return { success: 0, pending: 0, failed: 0 };
+    if (items.length === 0) {
+      return { success: 0, pending: 0, failed: 0, incompleteResults };
     }
 
     // Count workflow statuses for all PRs
@@ -56,8 +47,7 @@ export class WorkflowSummaryService {
     let pending = 0;
     let failed = 0;
 
-    // Process PRs in batches to avoid rate limiting
-    const prPromises = searchData.items.map(async (item: GitHubIssueSearchItem) => {
+    const getStatus = async (item: GitHubIssueSearchItem) => {
       const repoUrlParts = item.repository_url.split('/');
       const repoName = repoUrlParts.pop();
       const repoOwner = repoUrlParts.pop();
@@ -132,27 +122,23 @@ export class WorkflowSummaryService {
         console.error(`Error fetching workflow status for PR ${item.number}:`, error);
         return 'unknown';
       }
-    });
+    };
 
-  const statuses = await Promise.all(prPromises);
-    
-    // Count the statuses
-    statuses.forEach(status => {
-      switch (status) {
-        case 'success':
-          success++;
-          break;
-        case 'pending':
-          pending++;
-          break;
-        case 'failure':
-          failed++;
-          break;
-        // 'unknown' statuses are not counted
-      }
-    });
+    // Process PRs in batches of 10 to avoid secondary rate limits
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < items.length; i += BATCH_SIZE) {
+      const batch = items.slice(i, i + BATCH_SIZE);
+      const batchStatuses = await Promise.all(batch.map(getStatus));
+      batchStatuses.forEach(status => {
+        switch (status) {
+          case 'success': success++; break;
+          case 'pending': pending++; break;
+          case 'failure': failed++; break;
+        }
+      });
+    }
 
-    return { success, pending, failed };
+    return { success, pending, failed, incompleteResults };
   }
 
   private mapCombinedStatus(state: GitHubCombinedStatusResponse['state'] | null | undefined): CiStatus {
