@@ -20,9 +20,9 @@ export class WorkflowSummaryComponent {
 
   constructor() {
     effect(() => {
-      const org = this.organization();
-      const tkn = this.token();
       const trigger = this.refreshTrigger();
+      const org = untracked(this.organization);
+      const tkn = untracked(this.token);
 
       if (org && tkn && trigger > 0 && !untracked(this.isLoading)) {
         void this.loadSummary(org, tkn);
