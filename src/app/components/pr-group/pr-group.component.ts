@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { PrGroup, PullRequest } from '../../models/pull-request.model';
 import { PrItemComponent } from '../pr-item/pr-item.component';
 
@@ -44,17 +44,9 @@ export class PrGroupComponent {
     this.togglePr.emit(pr);
   }
 
-  isGroupProcessing(): boolean {
-    return this.group().prs.some(pr => pr.isProcessing);
-  }
-
-  hasFailingWorkflows(): boolean {
-    return this.group().prs.some(pr => pr.workflowStatus === 'failure');
-  }
-
-  isGroupMergeDisabled(): boolean {
-    return this.isGroupProcessing() || this.hasFailingWorkflows();
-  }
+  isGroupProcessing = computed(() => this.group().prs.some(pr => pr.isProcessing));
+  hasFailingWorkflows = computed(() => this.group().prs.some(pr => pr.workflowStatus === 'failure'));
+  isGroupMergeDisabled = computed(() => this.isGroupProcessing() || this.hasFailingWorkflows());
 
   getCIStatusIcon(status: PrGroup['aggregateCiStatus']): string {
     switch (status) {

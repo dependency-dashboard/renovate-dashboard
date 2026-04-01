@@ -23,7 +23,7 @@ export class WorkflowSummaryComponent {
     const tkn = this.token();
     const trigger = this.refreshTrigger();
 
-    if (org && tkn && trigger > 0) {
+    if (org && tkn && trigger > 0 && !this.isLoading()) {
       void this.loadSummary(org, tkn);
     }
   });
