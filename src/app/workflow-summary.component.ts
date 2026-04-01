@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, effect, input, signal, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, effect, input, signal, inject, untracked } from '@angular/core';
 import { WorkflowSummaryService, WorkflowSummary } from './workflow-summary.service';
 
 @Component({
@@ -23,7 +23,7 @@ export class WorkflowSummaryComponent {
     const tkn = this.token();
     const trigger = this.refreshTrigger();
 
-    if (org && tkn && trigger > 0 && !this.isLoading()) {
+    if (org && tkn && trigger > 0 && !untracked(this.isLoading)) {
       void this.loadSummary(org, tkn);
     }
   });
