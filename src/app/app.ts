@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, signal, computed } from '@angular/core';
+import { ChangeDetectionStrategy, Component, signal, computed, inject } from '@angular/core';
 import {
   PrGroup,
   PullRequest,
@@ -14,6 +14,7 @@ import { SearchFormComponent } from './components/search-form/search-form.compon
 import { PrGroupComponent } from './components/pr-group/pr-group.component';
 import { WorkflowSummaryComponent } from './workflow-summary.component';
 import { getSourceRepositoryUrl } from './config/source-repository-url';
+import { SessionStorageService, SESSION_KEYS } from './services/session-storage.service';
 
 @Component({
   selector: 'app-root',
@@ -23,9 +24,11 @@ import { getSourceRepositoryUrl } from './config/source-repository-url';
 })
 export class App {
   readonly sourceRepositoryUrl = getSourceRepositoryUrl();
+  private storage = inject(SessionStorageService);
+
   // --- STATE SIGNALS ---
-  organization = signal<string>('');
-  token = signal<string>('');
+  organization = signal<string>(this.storage.get(SESSION_KEYS.organization));
+  token = signal<string>(this.storage.get(SESSION_KEYS.token));
   prGroups = signal<PrGroup[]>([]);
   isLoading = signal<boolean>(false);
   error = signal<string | null>(null);
@@ -46,7 +49,12 @@ export class App {
     this.error.set(null);
     this.prGroups.set([]);
     this.searched.set(true);
-    const orgVal = this.organization();
+    const orgVal = this.organization().trim();
+    const tokenVal = this.token().trim();
+    this.organization.set(orgVal);
+    this.token.set(tokenVal);
+    this.storage.set(SESSION_KEYS.organization, orgVal);
+    this.storage.set(SESSION_KEYS.token, tokenVal);
 
     try {
       // Step 1: Search for all open PRs by Renovate in the org
