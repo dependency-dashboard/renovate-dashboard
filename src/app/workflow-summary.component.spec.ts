@@ -68,6 +68,35 @@ describe('WorkflowSummaryComponent', () => {
     expect(fixture.componentInstance.summary()).toEqual({ success: 3, pending: 1, failed: 2 });
   });
 
+  it('does not reload when organization changes without a refreshTrigger bump', () => {
+    const fixture = TestBed.createComponent(WorkflowSummaryComponent);
+    fixture.componentRef.setInput('organization', 'my-org');
+    fixture.componentRef.setInput('token', 'ghp_test');
+    fixture.componentRef.setInput('refreshTrigger', 1);
+    TestBed.flushEffects();
+    summaryServiceSpy.getSummary.mockClear();
+
+    // Simulate the user editing the organization field without re-submitting
+    fixture.componentRef.setInput('organization', 'my-org-edited');
+    TestBed.flushEffects();
+
+    expect(summaryServiceSpy.getSummary).not.toHaveBeenCalled();
+  });
+
+  it('does not reload when token changes without a refreshTrigger bump', () => {
+    const fixture = TestBed.createComponent(WorkflowSummaryComponent);
+    fixture.componentRef.setInput('organization', 'my-org');
+    fixture.componentRef.setInput('token', 'ghp_test');
+    fixture.componentRef.setInput('refreshTrigger', 1);
+    TestBed.flushEffects();
+    summaryServiceSpy.getSummary.mockClear();
+
+    fixture.componentRef.setInput('token', 'ghp_new_token');
+    TestBed.flushEffects();
+
+    expect(summaryServiceSpy.getSummary).not.toHaveBeenCalled();
+  });
+
   it('resets summary to zeros on service error', async () => {
     summaryServiceSpy.getSummary.mockRejectedValueOnce(new Error('Network error'));
 
