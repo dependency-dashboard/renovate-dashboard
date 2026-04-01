@@ -18,15 +18,17 @@ export class WorkflowSummaryComponent {
   summary = signal<WorkflowSummary>({ success: 0, pending: 0, failed: 0 });
   isLoading = signal<boolean>(false);
 
-  private loadEffect = effect(() => {
-    const org = this.organization();
-    const tkn = this.token();
-    const trigger = this.refreshTrigger();
+  constructor() {
+    effect(() => {
+      const org = this.organization();
+      const tkn = this.token();
+      const trigger = this.refreshTrigger();
 
-    if (org && tkn && trigger > 0 && !untracked(this.isLoading)) {
-      void this.loadSummary(org, tkn);
-    }
-  });
+      if (org && tkn && trigger > 0 && !untracked(this.isLoading)) {
+        void this.loadSummary(org, tkn);
+      }
+    });
+  }
 
   private async loadSummary(organization: string, token: string): Promise<void> {
     this.isLoading.set(true);
