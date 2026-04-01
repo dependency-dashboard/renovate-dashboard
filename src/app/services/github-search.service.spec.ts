@@ -60,6 +60,22 @@ describe('GitHubSearchService', () => {
     expect(incompleteResults).toBe(true);
   });
 
+  it('continues fetching when incomplete_results is true but fewer than per_page items were returned', async () => {
+    // GitHub can return < 100 items with incomplete_results: true while total_count is still higher.
+    // The loop should not treat a short page as end-of-results in that case.
+    const shortPage = Array.from({ length: 50 }, (_, i) => makeItem(i + 1));
+    const finalPage = [makeItem(51)];
+
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(searchResponse(shortPage, { total_count: 51, incomplete_results: true }))
+      .mockResolvedValueOnce(searchResponse(finalPage, { total_count: 51, incomplete_results: true }));
+
+    const { items, incompleteResults } = await service.fetchAllSearchItems(QUERY, TOKEN);
+
+    expect(items).toHaveLength(51);
+    expect(incompleteResults).toBe(true);
+  });
+
   it('caps at 10 pages and sets incompleteResults when total_count exceeds 1000', async () => {
     const fullPage = Array.from({ length: 100 }, (_, i) => makeItem(i + 1));
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() =>

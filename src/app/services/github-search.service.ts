@@ -35,7 +35,9 @@ export class GitHubSearchService {
       if (data.incomplete_results) {
         incompleteResults = true;
       }
-      if (data.items.length < 100 || allItems.length >= data.total_count) {
+      const reachedTotalCount = allItems.length >= data.total_count;
+      const noMoreItems = data.items.length === 0;
+      if (reachedTotalCount || noMoreItems) {
         break;
       }
       // Reached the 10-page (1000-result) cap with more results remaining
