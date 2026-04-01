@@ -12,6 +12,7 @@ export interface WorkflowSummary {
   success: number;
   pending: number;
   failed: number;
+  incompleteResults?: boolean;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -30,39 +31,47 @@ export class WorkflowSummaryService {
     }
   }
 
-  private async fetchAllSearchItems(query: string, token: string): Promise<GitHubIssueSearchItem[]> {
+  private async fetchAllSearchItems(query: string, token: string): Promise<{ items: GitHubIssueSearchItem[]; incompleteResults: boolean }> {
     const headers = {
       'Accept': 'application/vnd.github.v3+json',
       'Authorization': `token ${token}`
     };
     const allItems: GitHubIssueSearchItem[] = [];
+    let incompleteResults = false;
     let page = 1;
 
-    while (true) {
-      const url = `https://api.github.com/search/issues?q=${query}&per_page=100&page=${page}`;
+    while (page <= 10) {
+      const params = new URLSearchParams({ q: query, per_page: '100', page: String(page) });
+      const url = `https://api.github.com/search/issues?${params.toString()}`;
       const response = await fetch(url, { headers });
       if (!response.ok) {
         throw new Error(`Failed to search PRs: ${response.status}`);
       }
       const data = await response.json() as GitHubSearchIssuesResponse;
       allItems.push(...data.items);
+      if (data.incomplete_results) {
+        incompleteResults = true;
+      }
       if (data.items.length < 100 || allItems.length >= data.total_count) {
         break;
       }
       page++;
+      if (page > 10) {
+        incompleteResults = true;
+      }
     }
 
-    return allItems;
+    return { items: allItems, incompleteResults };
   }
 
   private async fetchWorkflowSummary(organization: string, token: string): Promise<WorkflowSummary> {
-    const items = await this.fetchAllSearchItems(
-      `is:pr+author:app/renovate+org:${organization}+is:open`,
+    const { items, incompleteResults } = await this.fetchAllSearchItems(
+      `is:pr author:app/renovate org:${organization} is:open`,
       token
     );
 
     if (items.length === 0) {
-      return { success: 0, pending: 0, failed: 0 };
+      return { success: 0, pending: 0, failed: 0, incompleteResults };
     }
 
     // Count workflow statuses for all PRs
@@ -70,8 +79,7 @@ export class WorkflowSummaryService {
     let pending = 0;
     let failed = 0;
 
-    // Process PRs in batches to avoid rate limiting
-    const prPromises = items.map(async (item: GitHubIssueSearchItem) => {
+    const getStatus = async (item: GitHubIssueSearchItem) => {
       const repoUrlParts = item.repository_url.split('/');
       const repoName = repoUrlParts.pop();
       const repoOwner = repoUrlParts.pop();
@@ -146,27 +154,23 @@ export class WorkflowSummaryService {
         console.error(`Error fetching workflow status for PR ${item.number}:`, error);
         return 'unknown';
       }
-    });
+    };
 
-  const statuses = await Promise.all(prPromises);
-    
-    // Count the statuses
-    statuses.forEach(status => {
-      switch (status) {
-        case 'success':
-          success++;
-          break;
-        case 'pending':
-          pending++;
-          break;
-        case 'failure':
-          failed++;
-          break;
-        // 'unknown' statuses are not counted
-      }
-    });
+    // Process PRs in batches of 10 to avoid secondary rate limits
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < items.length; i += BATCH_SIZE) {
+      const batch = items.slice(i, i + BATCH_SIZE);
+      const batchStatuses = await Promise.all(batch.map(getStatus));
+      batchStatuses.forEach(status => {
+        switch (status) {
+          case 'success': success++; break;
+          case 'pending': pending++; break;
+          case 'failure': failed++; break;
+        }
+      });
+    }
 
-    return { success, pending, failed };
+    return { success, pending, failed, incompleteResults };
   }
 
   private mapCombinedStatus(state: GitHubCombinedStatusResponse['state'] | null | undefined): CiStatus {

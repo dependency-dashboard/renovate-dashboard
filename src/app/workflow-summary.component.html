@@ -8,6 +8,9 @@
     <span class="count">{{ summary().pending }}</span>
     <span title="Failed workflows" class="icon failed">❌</span>
     <span class="count">{{ summary().failed }}</span>
+    @if (summary().incompleteResults) {
+      <span title="Workflow counts may be incomplete — the GitHub Search API returned partial results" class="text-yellow-400 ml-1 text-xs cursor-help">⚠️</span>
+    }
   } @else {
     <span class="text-gray-500 text-sm">No workflow data</span>
   }

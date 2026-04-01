@@ -290,8 +290,9 @@ export class App {
     let incompleteResults = false;
     let page = 1;
 
-    while (true) {
-      const url = `https://api.github.com/search/issues?q=${query}&per_page=100&page=${page}`;
+    while (page <= 10) {
+      const params = new URLSearchParams({ q: query, per_page: '100', page: String(page) });
+      const url = `https://api.github.com/search/issues?${params.toString()}`;
       const result = await this.apiRequest<GitHubSearchIssuesResponse>(url);
 
       allItems.push(...result.items);
@@ -303,6 +304,9 @@ export class App {
         break;
       }
       page++;
+      if (page > 10) {
+        incompleteResults = true;
+      }
     }
 
     return { items: allItems, incompleteResults };
