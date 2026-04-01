@@ -336,9 +336,9 @@ export class App {
   calculateAggregateStatus(statuses: CiStatus[]): PrGroup['aggregateCiStatus'] {
     if (statuses.some(s => s === 'failure')) return 'failure';
     if (statuses.some(s => s === 'pending')) return 'pending';
+    if (statuses.length === 0) return 'unknown';
     if (statuses.every(s => s === 'success')) return 'success';
-    if (statuses.length > 0) return 'mixed';
-    return 'unknown';
+    return 'mixed';
   }
 
   calculateWorkflowSummary(prs: PullRequest[]): { success: number; pending: number; failed: number; } {
