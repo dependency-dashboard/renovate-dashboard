@@ -16,7 +16,15 @@
 
   <!-- GitHub Token Input -->
   <div>
-    <label for="token" class="block text-sm font-medium text-gray-300 mb-2">GitHub Personal Access Token</label>
+    <div class="flex items-center gap-1.5 mb-2">
+      <label for="token" class="text-sm font-medium text-gray-300">GitHub Personal Access Token</label>
+      <div class="relative group">
+        <svg class="w-4 h-4 text-gray-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-label="Token storage info"><circle cx="12" cy="12" r="10" stroke-width="2"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 16v-4m0-4h.01"/></svg>
+        <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 rounded-md bg-gray-900 border border-gray-600 px-3 py-2 text-xs text-gray-300 shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150 z-10" role="tooltip">
+          Stored for this session only — cleared when the tab is closed.
+        </div>
+      </div>
+    </div>
     <input
       id="token"
       type="password"
@@ -25,7 +33,6 @@
       placeholder="Token with 'repo' scope is required"
       class="w-full bg-gray-900 border border-gray-600 rounded-md px-4 py-2 text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:outline-none transition duration-200"
     />
-    <p class="mt-1 text-xs text-gray-500">Stored for this session only — cleared when the tab is closed.</p>
   </div>
 </div>
 
