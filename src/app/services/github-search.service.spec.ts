@@ -1,6 +1,6 @@
 import { provideZonelessChangeDetection } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { vi } from 'vitest';
 import { GitHubSearchService } from './github-search.service';
 
 const TOKEN = 'ghp_test';
