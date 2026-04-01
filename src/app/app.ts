@@ -14,7 +14,7 @@ import { SearchFormComponent } from './components/search-form/search-form.compon
 import { PrGroupComponent } from './components/pr-group/pr-group.component';
 import { WorkflowSummaryComponent } from './workflow-summary.component';
 import { getSourceRepositoryUrl } from './config/source-repository-url';
-import { SessionStorageService } from './services/session-storage.service';
+import { SessionStorageService, SESSION_KEYS } from './services/session-storage.service';
 
 @Component({
   selector: 'app-root',
@@ -27,8 +27,8 @@ export class App {
   private storage = inject(SessionStorageService);
 
   // --- STATE SIGNALS ---
-  organization = signal<string>(this.storage.get('organization'));
-  token = signal<string>(this.storage.get('token'));
+  organization = signal<string>(this.storage.get(SESSION_KEYS.organization));
+  token = signal<string>(this.storage.get(SESSION_KEYS.token));
   prGroups = signal<PrGroup[]>([]);
   isLoading = signal<boolean>(false);
   error = signal<string | null>(null);
@@ -53,8 +53,8 @@ export class App {
     const tokenVal = this.token().trim();
     this.organization.set(orgVal);
     this.token.set(tokenVal);
-    this.storage.set('organization', orgVal);
-    this.storage.set('token', tokenVal);
+    this.storage.set(SESSION_KEYS.organization, orgVal);
+    this.storage.set(SESSION_KEYS.token, tokenVal);
 
     try {
       // Step 1: Search for all open PRs by Renovate in the org
