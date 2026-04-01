@@ -32,6 +32,7 @@ export class App {
   prGroups = signal<PrGroup[]>([]);
   isLoading = signal<boolean>(false);
   error = signal<string | null>(null);
+  incompleteResults = signal<boolean>(false);
   searched = signal<boolean>(false);
   workflowRefreshTrigger = signal<number>(0);
   expandedPrIds = signal<Set<number>>(new Set());
@@ -48,6 +49,7 @@ export class App {
     this.isLoading.set(true);
     this.error.set(null);
     this.prGroups.set([]);
+    this.incompleteResults.set(false);
     this.searched.set(true);
     const orgVal = this.organization().trim();
     const tokenVal = this.token().trim();
@@ -57,14 +59,18 @@ export class App {
     this.storage.set(SESSION_KEYS.token, tokenVal);
 
     try {
-      // Step 1: Search for all open PRs by Renovate in the org
-      const searchUrl = `https://api.github.com/search/issues?q=is:pr+author:app/renovate+org:${orgVal}+is:open&per_page=100`;
-      const searchResult = await this.apiRequest<GitHubSearchIssuesResponse>(searchUrl);
-      
-      if (searchResult.items.length === 0) {
+      // Step 1: Search for all open PRs by Renovate in the org (auto-paginated)
+      const { items, incompleteResults } = await this.fetchAllSearchItems(
+        `is:pr+author:app/renovate+org:${orgVal}+is:open`
+      );
+      this.incompleteResults.set(incompleteResults);
+
+      if (items.length === 0) {
         this.prGroups.set([]);
         return;
       }
+
+      const searchResult = { items };
 
       // Step 2: Group PRs by title
       const groupsMap = new Map<string, PrGroup>();
@@ -278,6 +284,29 @@ export class App {
   }
 
   // --- HELPER & UTILITY METHODS ---
+
+  private async fetchAllSearchItems(query: string): Promise<{ items: GitHubIssueSearchItem[]; incompleteResults: boolean }> {
+    const allItems: GitHubIssueSearchItem[] = [];
+    let incompleteResults = false;
+    let page = 1;
+
+    while (true) {
+      const url = `https://api.github.com/search/issues?q=${query}&per_page=100&page=${page}`;
+      const result = await this.apiRequest<GitHubSearchIssuesResponse>(url);
+
+      allItems.push(...result.items);
+      if (result.incomplete_results) {
+        incompleteResults = true;
+      }
+
+      if (result.items.length < 100 || allItems.length >= result.total_count) {
+        break;
+      }
+      page++;
+    }
+
+    return { items: allItems, incompleteResults };
+  }
 
   private async apiRequest<T>(url: string, method = 'GET', body?: object): Promise<T> {
     const headers: HeadersInit = {

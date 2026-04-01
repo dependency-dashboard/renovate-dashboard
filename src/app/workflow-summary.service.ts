@@ -30,24 +30,38 @@ export class WorkflowSummaryService {
     }
   }
 
-  private async fetchWorkflowSummary(organization: string, token: string): Promise<WorkflowSummary> {
-    // First, get all Renovate PRs for the organization
-    const searchUrl = `https://api.github.com/search/issues?q=is:pr+author:app/renovate+org:${organization}+is:open&per_page=100`;
-    
-    const searchResponse = await fetch(searchUrl, {
-      headers: {
-        'Accept': 'application/vnd.github.v3+json',
-        'Authorization': `token ${token}`
-      }
-    });
+  private async fetchAllSearchItems(query: string, token: string): Promise<GitHubIssueSearchItem[]> {
+    const headers = {
+      'Accept': 'application/vnd.github.v3+json',
+      'Authorization': `token ${token}`
+    };
+    const allItems: GitHubIssueSearchItem[] = [];
+    let page = 1;
 
-    if (!searchResponse.ok) {
-      throw new Error(`Failed to search PRs: ${searchResponse.status}`);
+    while (true) {
+      const url = `https://api.github.com/search/issues?q=${query}&per_page=100&page=${page}`;
+      const response = await fetch(url, { headers });
+      if (!response.ok) {
+        throw new Error(`Failed to search PRs: ${response.status}`);
+      }
+      const data = await response.json() as GitHubSearchIssuesResponse;
+      allItems.push(...data.items);
+      if (data.items.length < 100 || allItems.length >= data.total_count) {
+        break;
+      }
+      page++;
     }
 
-  const searchData = await searchResponse.json() as GitHubSearchIssuesResponse;
-    
-    if (!searchData.items || searchData.items.length === 0) {
+    return allItems;
+  }
+
+  private async fetchWorkflowSummary(organization: string, token: string): Promise<WorkflowSummary> {
+    const items = await this.fetchAllSearchItems(
+      `is:pr+author:app/renovate+org:${organization}+is:open`,
+      token
+    );
+
+    if (items.length === 0) {
       return { success: 0, pending: 0, failed: 0 };
     }
 
@@ -57,7 +71,7 @@ export class WorkflowSummaryService {
     let failed = 0;
 
     // Process PRs in batches to avoid rate limiting
-    const prPromises = searchData.items.map(async (item: GitHubIssueSearchItem) => {
+    const prPromises = items.map(async (item: GitHubIssueSearchItem) => {
       const repoUrlParts = item.repository_url.split('/');
       const repoName = repoUrlParts.pop();
       const repoOwner = repoUrlParts.pop();
