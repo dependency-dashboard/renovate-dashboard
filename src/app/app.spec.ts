@@ -320,10 +320,10 @@ describe('App', () => {
       app.token.set('ghp_test');
 
       vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response('<html>Bad Gateway</html>', { status: 502 })
+        new Response('<html>Bad Gateway</html>', { status: 502, statusText: 'Bad Gateway' })
       );
 
-      await expect((app as unknown as AppPrivate).apiRequest('https://api.github.com/test')).rejects.toThrow('API request failed with status: 502');
+      await expect((app as unknown as AppPrivate).apiRequest('https://api.github.com/test')).rejects.toThrow('API request failed with status: 502 Bad Gateway');
     });
 
     it('returns undefined for 204 No Content responses', async () => {

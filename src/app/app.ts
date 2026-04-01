@@ -282,7 +282,9 @@ export class App {
     }
     const response = await fetch(url, options);
     if (!response.ok) {
-      let errorMessage = `API request failed with status: ${response.status}`;
+      let errorMessage = response.statusText
+        ? `API request failed with status: ${response.status} ${response.statusText}`
+        : `API request failed with status: ${response.status}`;
       try {
         const errorData = await response.json();
         if (errorData.message) {
