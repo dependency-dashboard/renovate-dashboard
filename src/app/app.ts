@@ -282,8 +282,18 @@ export class App {
     }
     const response = await fetch(url, options);
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.message || `API request failed with status: ${response.status}`);
+      let errorMessage = response.statusText
+        ? `API request failed with status: ${response.status} ${response.statusText}`
+        : `API request failed with status: ${response.status}`;
+      try {
+        const errorData = await response.json();
+        if (errorData.message) {
+          errorMessage = errorData.message;
+        }
+      } catch {
+        // Response body is not JSON (e.g. HTML error page from a gateway); use default message
+      }
+      throw new Error(errorMessage);
     }
     // For 204 No Content responses (like on merge)
     if (response.status === 204) {

@@ -315,6 +315,17 @@ describe('App', () => {
       await expect((app as unknown as AppPrivate).apiRequest('https://api.github.com/test')).rejects.toThrow('Bad credentials');
     });
 
+    it('falls back to status message when error body is not JSON', async () => {
+      const app = TestBed.createComponent(App).componentInstance;
+      app.token.set('ghp_test');
+
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+        new Response('<html>Bad Gateway</html>', { status: 502, statusText: 'Bad Gateway' })
+      );
+
+      await expect((app as unknown as AppPrivate).apiRequest('https://api.github.com/test')).rejects.toThrow('API request failed with status: 502 Bad Gateway');
+    });
+
     it('returns undefined for 204 No Content responses', async () => {
       const app = TestBed.createComponent(App).componentInstance;
       app.token.set('ghp_test');
