@@ -3,6 +3,11 @@ import { TestBed } from '@angular/core/testing';
 import { PrItemComponent } from './pr-item.component';
 import { PullRequest } from '../../models/pull-request.model';
 
+function findButtonByText(nativeElement: HTMLElement, text: string): HTMLButtonElement {
+  return Array.from(nativeElement.querySelectorAll('button'))
+    .find((btn) => btn.textContent?.trim() === text) as HTMLButtonElement;
+}
+
 function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
   return {
     id: 1,
@@ -68,7 +73,7 @@ describe('PrItemComponent', () => {
       const emitted: PullRequest[] = [];
       fixture.componentInstance.closePr.subscribe((v: PullRequest) => emitted.push(v));
 
-      const closeBtn = fixture.nativeElement.querySelector('button.bg-red-800') as HTMLButtonElement;
+      const closeBtn = findButtonByText(fixture.nativeElement, 'Close');
       closeBtn.click();
 
       expect(emitted).toHaveLength(1);
@@ -84,7 +89,7 @@ describe('PrItemComponent', () => {
       const emitted: PullRequest[] = [];
       fixture.componentInstance.approveAndMergePr.subscribe((v: PullRequest) => emitted.push(v));
 
-      const mergeBtn = fixture.nativeElement.querySelector('button.bg-green-800') as HTMLButtonElement;
+      const mergeBtn = findButtonByText(fixture.nativeElement, 'Approve & Merge');
       mergeBtn.click();
 
       expect(emitted).toHaveLength(1);

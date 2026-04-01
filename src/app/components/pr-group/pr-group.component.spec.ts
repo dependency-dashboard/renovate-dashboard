@@ -3,6 +3,11 @@ import { TestBed } from '@angular/core/testing';
 import { PrGroupComponent } from './pr-group.component';
 import { PrGroup, PullRequest } from '../../models/pull-request.model';
 
+function findButtonByText(nativeElement: HTMLElement, text: string): HTMLButtonElement {
+  return Array.from(nativeElement.querySelectorAll('button'))
+    .find((btn) => btn.textContent?.trim() === text) as HTMLButtonElement;
+}
+
 function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
   return {
     id: 1,
@@ -109,7 +114,7 @@ describe('PrGroupComponent', () => {
       const emitted: PrGroup[] = [];
       fixture.componentInstance.toggleGroup.subscribe((g: PrGroup) => emitted.push(g));
 
-      const headerBtn = fixture.nativeElement.querySelector('button.flex-1') as HTMLButtonElement;
+      const headerBtn = findButtonByText(fixture.nativeElement, group.title);
       headerBtn.click();
 
       expect(emitted).toHaveLength(1);
@@ -125,7 +130,7 @@ describe('PrGroupComponent', () => {
       const emitted: PrGroup[] = [];
       fixture.componentInstance.closeGroupPrs.subscribe((g: PrGroup) => emitted.push(g));
 
-      const closeAllBtn = fixture.nativeElement.querySelector('button.bg-red-800') as HTMLButtonElement;
+      const closeAllBtn = findButtonByText(fixture.nativeElement, 'Close All');
       closeAllBtn.click();
 
       expect(emitted).toHaveLength(1);
@@ -140,7 +145,7 @@ describe('PrGroupComponent', () => {
       const emitted: PrGroup[] = [];
       fixture.componentInstance.approveAndMergeGroupPrs.subscribe((g: PrGroup) => emitted.push(g));
 
-      const mergeAllBtn = fixture.nativeElement.querySelector('button.bg-green-800') as HTMLButtonElement;
+      const mergeAllBtn = findButtonByText(fixture.nativeElement, 'Approve & Merge All');
       mergeAllBtn.click();
 
       expect(emitted).toHaveLength(1);
