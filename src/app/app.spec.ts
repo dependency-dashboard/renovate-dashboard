@@ -50,6 +50,8 @@ describe('App', () => {
     }).compileComponents();
   });
 
+  afterEach(() => vi.restoreAllMocks());
+
   it('should create the app', () => {
     const fixture = TestBed.createComponent(App);
     expect(fixture.componentInstance).toBeTruthy();
@@ -279,8 +281,6 @@ describe('App', () => {
       const calledUrls = fetchSpy.mock.calls.map((args) => String(args[0]));
       expect(calledUrls.some((u) => u.includes(`/pulls/${failingPr.number}`))).toBe(false);
       expect(calledUrls.some((u) => u.includes(`/pulls/${goodPr.number}`))).toBe(true);
-
-      fetchSpy.mockRestore();
     });
 
     it('sets an error when all PRs have failing workflows', async () => {
@@ -300,7 +300,6 @@ describe('App', () => {
       await app.approveAndMergeGroupPullRequests(makeGroup({ prs: [] }));
 
       expect(fetchSpy).not.toHaveBeenCalled();
-      fetchSpy.mockRestore();
     });
   });
 
@@ -314,7 +313,6 @@ describe('App', () => {
       );
 
       await expect((app as unknown as AppPrivate).apiRequest('https://api.github.com/test')).rejects.toThrow('Bad credentials');
-      vi.restoreAllMocks();
     });
 
     it('returns undefined for 204 No Content responses', async () => {
@@ -327,7 +325,6 @@ describe('App', () => {
 
       const result = await (app as unknown as AppPrivate).apiRequest('https://api.github.com/test', 'PUT');
       expect(result).toBeUndefined();
-      vi.restoreAllMocks();
     });
   });
 });
