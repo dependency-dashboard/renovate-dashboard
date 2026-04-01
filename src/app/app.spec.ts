@@ -5,6 +5,11 @@ import { App } from './app';
 import { getSourceRepositoryUrl } from './config/source-repository-url';
 import { PullRequest, PrGroup } from './models/pull-request.model';
 
+interface AppPrivate {
+  determineMergeMethod(pr: PullRequest): string;
+  apiRequest<T>(url: string, method?: string, body?: object): Promise<T>;
+}
+
 function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
   return {
     id: 1,
@@ -157,25 +162,25 @@ describe('App', () => {
     it('uses rebase for a single-commit PR when rebase is allowed', () => {
       const app = TestBed.createComponent(App).componentInstance;
       const pr = makePr({ commits: 1, allowRebaseMerge: true, allowSquashMerge: true });
-      expect((app as any).determineMergeMethod(pr)).toBe('rebase');
+      expect((app as unknown as AppPrivate).determineMergeMethod(pr)).toBe('rebase');
     });
 
     it('uses squash for a multi-commit PR when squash is allowed', () => {
       const app = TestBed.createComponent(App).componentInstance;
       const pr = makePr({ commits: 3, allowSquashMerge: true, allowRebaseMerge: true });
-      expect((app as any).determineMergeMethod(pr)).toBe('squash');
+      expect((app as unknown as AppPrivate).determineMergeMethod(pr)).toBe('squash');
     });
 
     it('falls back to merge when squash is not allowed for multi-commit PR', () => {
       const app = TestBed.createComponent(App).componentInstance;
       const pr = makePr({ commits: 3, allowSquashMerge: false, allowMergeCommit: true });
-      expect((app as any).determineMergeMethod(pr)).toBe('merge');
+      expect((app as unknown as AppPrivate).determineMergeMethod(pr)).toBe('merge');
     });
 
     it('throws when no merge method is available', () => {
       const app = TestBed.createComponent(App).componentInstance;
       const pr = makePr({ commits: 1, allowRebaseMerge: false, allowSquashMerge: false, allowMergeCommit: false });
-      expect(() => (app as any).determineMergeMethod(pr)).toThrow('No suitable merge method available');
+      expect(() => (app as unknown as AppPrivate).determineMergeMethod(pr)).toThrow('No suitable merge method available');
     });
   });
 
@@ -308,7 +313,7 @@ describe('App', () => {
         new Response(JSON.stringify({ message: 'Bad credentials' }), { status: 401 })
       );
 
-      await expect((app as any).apiRequest('https://api.github.com/test')).rejects.toThrow('Bad credentials');
+      await expect((app as unknown as AppPrivate).apiRequest('https://api.github.com/test')).rejects.toThrow('Bad credentials');
       vi.restoreAllMocks();
     });
 
@@ -320,7 +325,7 @@ describe('App', () => {
         new Response(null, { status: 204 })
       );
 
-      const result = await (app as any).apiRequest('https://api.github.com/test', 'PUT');
+      const result = await (app as unknown as AppPrivate).apiRequest('https://api.github.com/test', 'PUT');
       expect(result).toBeUndefined();
       vi.restoreAllMocks();
     });

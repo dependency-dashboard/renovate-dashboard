@@ -77,7 +77,7 @@ describe('WorkflowSummaryComponent', () => {
     fixture.componentRef.setInput('refreshTrigger', 1);
     TestBed.flushEffects();
 
-    await summaryServiceSpy.getSummary.mock.results[0].value.catch(() => {});
+    await Promise.allSettled([summaryServiceSpy.getSummary.mock.results[0].value]);
 
     expect(fixture.componentInstance.summary()).toEqual({ success: 0, pending: 0, failed: 0 });
   });
