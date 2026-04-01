@@ -1,28 +1,27 @@
-import { Component, Input, Output, EventEmitter } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 import { PrGroup, PullRequest } from '../../models/pull-request.model';
 import { PrItemComponent } from '../pr-item/pr-item.component';
 
 @Component({
   selector: 'app-pr-group',
-  standalone: true,
-  imports: [CommonModule, PrItemComponent],
+  imports: [PrItemComponent],
   templateUrl: './pr-group.component.html',
-  styleUrls: ['./pr-group.component.scss']
+  styleUrls: ['./pr-group.component.scss'],
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class PrGroupComponent {
-  @Input({ required: true }) group!: PrGroup;
-  @Input() expandedPrIds: ReadonlySet<number> = new Set<number>();
-  
-  @Output() toggleGroup = new EventEmitter<PrGroup>();
-  @Output() closePr = new EventEmitter<PullRequest>();
-  @Output() approveAndMergePr = new EventEmitter<PullRequest>();
-  @Output() closeGroupPrs = new EventEmitter<PrGroup>();
-  @Output() approveAndMergeGroupPrs = new EventEmitter<PrGroup>();
-  @Output() togglePr = new EventEmitter<PullRequest>();
+  group = input.required<PrGroup>();
+  expandedPrIds = input<ReadonlySet<number>>(new Set<number>());
+
+  toggleGroup = output<PrGroup>();
+  closePr = output<PullRequest>();
+  approveAndMergePr = output<PullRequest>();
+  closeGroupPrs = output<PrGroup>();
+  approveAndMergeGroupPrs = output<PrGroup>();
+  togglePr = output<PullRequest>();
 
   onToggleGroup(): void {
-    this.toggleGroup.emit(this.group);
+    this.toggleGroup.emit(this.group());
   }
 
   onClosePr(pr: PullRequest): void {
@@ -34,11 +33,11 @@ export class PrGroupComponent {
   }
 
   onCloseGroup(): void {
-    this.closeGroupPrs.emit(this.group);
+    this.closeGroupPrs.emit(this.group());
   }
 
   onApproveAndMergeGroup(): void {
-    this.approveAndMergeGroupPrs.emit(this.group);
+    this.approveAndMergeGroupPrs.emit(this.group());
   }
 
   togglePrExpansion(pr: PullRequest): void {
@@ -46,11 +45,11 @@ export class PrGroupComponent {
   }
 
   isGroupProcessing(): boolean {
-    return this.group.prs.some(pr => pr.isProcessing);
+    return this.group().prs.some(pr => pr.isProcessing);
   }
 
   hasFailingWorkflows(): boolean {
-    return this.group.prs.some(pr => pr.workflowStatus === 'failure');
+    return this.group().prs.some(pr => pr.workflowStatus === 'failure');
   }
 
   isGroupMergeDisabled(): boolean {

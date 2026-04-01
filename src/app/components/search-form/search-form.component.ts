@@ -1,22 +1,21 @@
-import { Component, Input, Output, EventEmitter } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 
 @Component({
   selector: 'app-search-form',
-  standalone: true,
-  imports: [CommonModule],
+  imports: [],
   templateUrl: './search-form.component.html',
-  styleUrls: ['./search-form.component.scss']
+  styleUrls: ['./search-form.component.scss'],
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SearchFormComponent {
-  @Input() organization = '';
-  @Input() token = '';
-  @Input() isLoading = false;
-  @Input() formValid = false;
-  
-  @Output() organizationChange = new EventEmitter<string>();
-  @Output() tokenChange = new EventEmitter<string>();
-  @Output() searchTriggered = new EventEmitter<void>();
+  organization = input('');
+  token = input('');
+  isLoading = input(false);
+  formValid = input(false);
+
+  organizationChange = output<string>();
+  tokenChange = output<string>();
+  searchTriggered = output<void>();
 
   onOrganizationChange(event: Event): void {
     const target = event.target as HTMLInputElement;

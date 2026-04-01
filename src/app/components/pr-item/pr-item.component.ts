@@ -1,32 +1,31 @@
-import { Component, Input, Output, EventEmitter } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 import { CiStatus, CheckRun, PullRequest } from '../../models/pull-request.model';
 
 @Component({
   selector: 'app-pr-item',
-  standalone: true,
-  imports: [CommonModule],
+  imports: [],
   templateUrl: './pr-item.component.html',
-  styleUrls: ['./pr-item.component.scss']
+  styleUrls: ['./pr-item.component.scss'],
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class PrItemComponent {
-  @Input({ required: true }) pr!: PullRequest;
-  @Input() expanded = false;
-  @Output() toggleExpanded = new EventEmitter<void>();
-  
-  @Output() closePr = new EventEmitter<PullRequest>();
-  @Output() approveAndMergePr = new EventEmitter<PullRequest>();
+  pr = input.required<PullRequest>();
+  expanded = input(false);
+
+  toggleExpanded = output<void>();
+  closePr = output<PullRequest>();
+  approveAndMergePr = output<PullRequest>();
 
   get isMergeDisabled(): boolean {
-    return this.pr.isProcessing || this.pr.workflowStatus === 'failure';
+    return this.pr().isProcessing || this.pr().workflowStatus === 'failure';
   }
 
   onClosePr(): void {
-    this.closePr.emit(this.pr);
+    this.closePr.emit(this.pr());
   }
 
   onApproveAndMergePr(): void {
-    this.approveAndMergePr.emit(this.pr);
+    this.approveAndMergePr.emit(this.pr());
   }
 
   onToggleExpanded(): void {
