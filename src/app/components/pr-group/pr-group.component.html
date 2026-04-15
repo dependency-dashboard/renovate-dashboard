@@ -23,16 +23,28 @@
     <div class="flex items-center gap-3 flex-wrap justify-end">
       <!-- Workflow status dots -->
       <div class="flex items-center gap-3 text-xs text-ink-2">
-        <span class="flex items-center gap-1.5" title="Successful workflows">
-          <span class="size-2 rounded-full bg-emerald-500 shrink-0"></span>
+        <span
+          class="flex items-center gap-1.5"
+          title="Successful workflows"
+          [attr.aria-label]="'Successful workflows: ' + group().workflowSummary.success"
+        >
+          <span class="size-2 rounded-full bg-emerald-500 shrink-0" aria-hidden="true"></span>
           {{ group().workflowSummary.success }}
         </span>
-        <span class="flex items-center gap-1.5" title="Pending workflows">
-          <span class="size-2 rounded-full bg-amber-400 shrink-0"></span>
+        <span
+          class="flex items-center gap-1.5"
+          title="Pending workflows"
+          [attr.aria-label]="'Pending workflows: ' + group().workflowSummary.pending"
+        >
+          <span class="size-2 rounded-full bg-amber-400 shrink-0" aria-hidden="true"></span>
           {{ group().workflowSummary.pending }}
         </span>
-        <span class="flex items-center gap-1.5" title="Failed workflows">
-          <span class="size-2 rounded-full bg-rose-500 shrink-0"></span>
+        <span
+          class="flex items-center gap-1.5"
+          title="Failed workflows"
+          [attr.aria-label]="'Failed workflows: ' + group().workflowSummary.failed"
+        >
+          <span class="size-2 rounded-full bg-rose-500 shrink-0" aria-hidden="true"></span>
           {{ group().workflowSummary.failed }}
         </span>
       </div>

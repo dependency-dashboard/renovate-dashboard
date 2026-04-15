@@ -43,10 +43,10 @@ export class PrItemComponent {
 
   getWorkflowStatusIcon(status: CiStatus): string {
     switch (status) {
-      case 'success': return '<span class="inline-block size-2 rounded-full bg-emerald-500" title="Workflow success"></span>';
-      case 'failure': return '<span class="inline-block size-2 rounded-full bg-rose-500" title="Workflow failed"></span>';
-      case 'pending': return '<span class="inline-block size-2 rounded-full bg-amber-400" title="Workflow pending"></span>';
-      default: return '<span class="inline-block size-2 rounded-full bg-ink-3" title="Workflow unknown"></span>';
+      case 'success': return '<span class="inline-block size-2 rounded-full bg-emerald-500" role="img" aria-label="Workflow success" title="Workflow success"></span>';
+      case 'failure': return '<span class="inline-block size-2 rounded-full bg-rose-500" role="img" aria-label="Workflow failed" title="Workflow failed"></span>';
+      case 'pending': return '<span class="inline-block size-2 rounded-full bg-amber-400" role="img" aria-label="Workflow pending" title="Workflow pending"></span>';
+      default: return '<span class="inline-block size-2 rounded-full bg-ink-3" role="img" aria-label="Workflow unknown" title="Workflow unknown"></span>';
     }
   }
 
