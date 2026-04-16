@@ -5,6 +5,7 @@ import {
   GitHubCombinedStatusResponse,
   GitHubIssueSearchItem,
   GitHubPullRequestDetails,
+  OrgConnection,
 } from './models/pull-request.model';
 import { GitHubSearchService } from './services/github-search.service';
 
@@ -19,13 +20,24 @@ export interface WorkflowSummary {
 export class WorkflowSummaryService {
   private githubSearch = inject(GitHubSearchService);
 
-  async getSummary(organization: string, token: string): Promise<WorkflowSummary> {
-    if (!organization || !token) {
+  async getSummary(connections: OrgConnection[]): Promise<WorkflowSummary> {
+    if (connections.length === 0) {
       return { success: 0, pending: 0, failed: 0 };
     }
 
     try {
-      return await this.fetchWorkflowSummary(organization, token);
+      const results = await Promise.all(
+        connections.map(conn => this.fetchWorkflowSummary(conn.organization, conn.token))
+      );
+      return results.reduce(
+        (acc, r) => ({
+          success: acc.success + r.success,
+          pending: acc.pending + r.pending,
+          failed: acc.failed + r.failed,
+          incompleteResults: acc.incompleteResults || r.incompleteResults,
+        }),
+        { success: 0, pending: 0, failed: 0, incompleteResults: false }
+      );
     } catch (error) {
       console.error('Failed to fetch workflow summary', error);
       return { success: 0, pending: 0, failed: 0 };

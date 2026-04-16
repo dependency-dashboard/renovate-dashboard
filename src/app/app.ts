@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, signal, computed, inject, effect } from '@angular/core';
 import { DOCUMENT } from '@angular/common';
 import {
+  OrgConnection,
   PrGroup,
   PullRequest,
   GitHubCheckRunsResponse,
@@ -30,8 +31,7 @@ export class App {
   private doc = inject(DOCUMENT);
 
   // --- STATE SIGNALS ---
-  organization = signal<string>(this.storage.get(SESSION_KEYS.organization));
-  token = signal<string>(this.storage.get(SESSION_KEYS.token));
+  connections = signal<OrgConnection[]>(this.loadConnections());
   darkMode = signal<boolean>(this.getInitialDarkMode());
   prGroups = signal<PrGroup[]>([]);
   isLoading = signal<boolean>(false);
@@ -42,7 +42,7 @@ export class App {
   expandedPrIds = signal<Set<number>>(new Set());
 
   // --- COMPUTED SIGNALS ---
-  formValid = computed(() => this.organization().trim() !== '' && this.token().trim() !== '');
+  formValid = computed(() => this.connections().length > 0);
 
   constructor() {
     effect(() => {
@@ -53,6 +53,34 @@ export class App {
       }
     });
   }
+
+  // --- CONNECTION MANAGEMENT ---
+
+  onConnectionsChange(connections: OrgConnection[]): void {
+    this.connections.set(connections);
+    this.storage.setJson(SESSION_KEYS.connections, connections);
+  }
+
+  private loadConnections(): OrgConnection[] {
+    // If the new connections key exists, use it directly
+    const stored = this.storage.getJson<OrgConnection[]>(SESSION_KEYS.connections);
+    if (Array.isArray(stored) && stored.length > 0) {
+      return stored;
+    }
+
+    // Migrate from old single-org keys
+    const org = this.storage.get(SESSION_KEYS.organization);
+    const token = this.storage.get(SESSION_KEYS.token);
+    if (org || token) {
+      const migrated: OrgConnection[] = [{ organization: org, token }];
+      this.storage.setJson(SESSION_KEYS.connections, migrated);
+      return migrated;
+    }
+
+    return [];
+  }
+
+  // --- DARK MODE ---
 
   private getInitialDarkMode(): boolean {
     try {
@@ -78,7 +106,7 @@ export class App {
   // --- API ORCHESTRATION ---
   async searchAndProcessPullRequests() {
     if (!this.formValid()) {
-      this.error.set("Organization and Personal Access Token are required.");
+      this.error.set("At least one organization connection is required.");
       return;
     }
     this.isLoading.set(true);
@@ -86,31 +114,40 @@ export class App {
     this.prGroups.set([]);
     this.incompleteResults.set(false);
     this.searched.set(true);
-    const orgVal = this.organization().trim();
-    const tokenVal = this.token().trim();
-    this.organization.set(orgVal);
-    this.token.set(tokenVal);
-    this.storage.set(SESSION_KEYS.organization, orgVal);
-    this.storage.set(SESSION_KEYS.token, tokenVal);
+
+    const connections = this.connections();
 
     try {
-      // Step 1: Search for all open PRs by Renovate in the org (auto-paginated)
-      const { items, incompleteResults } = await this.githubSearch.fetchAllSearchItems(
-        `is:pr author:app/renovate org:${orgVal} is:open`,
-        tokenVal
+      // Step 1: Search for all open Renovate PRs across all configured orgs in parallel
+      const searchResults = await Promise.all(
+        connections.map(conn =>
+          this.githubSearch.fetchAllSearchItems(
+            `is:pr author:app/renovate org:${conn.organization} is:open`,
+            conn.token
+          )
+        )
       );
-      this.incompleteResults.set(incompleteResults);
 
-      if (items.length === 0) {
+      // Merge results from all orgs
+      const allItems: GitHubIssueSearchItem[] = [];
+      let anyIncomplete = false;
+      for (const { items, incompleteResults } of searchResults) {
+        allItems.push(...items);
+        if (incompleteResults) anyIncomplete = true;
+      }
+      this.incompleteResults.set(anyIncomplete);
+
+      if (allItems.length === 0) {
         this.prGroups.set([]);
         return;
       }
 
-      const searchResult = { items };
+      // Build a lookup map from org name → token for PR construction
+      const tokenByOrg = new Map(connections.map(c => [c.organization.toLowerCase(), c.token]));
 
       // Step 2: Group PRs by title
       const groupsMap = new Map<string, PrGroup>();
-      searchResult.items.forEach((item: GitHubIssueSearchItem) => {
+      allItems.forEach((item: GitHubIssueSearchItem) => {
         const repoUrlParts = item.repository_url.split('/');
         const repoName = repoUrlParts.pop();
         const repoOwner = repoUrlParts.pop();
@@ -118,6 +155,8 @@ export class App {
         if (!repoOwner || !repoName) {
           return;
         }
+
+        const orgToken = tokenByOrg.get(repoOwner.toLowerCase()) ?? '';
 
         const pr: PullRequest = {
           id: item.id,
@@ -135,13 +174,14 @@ export class App {
           checkRuns: [], // Initialize as empty
           isProcessing: false,
           workflowStatus: 'unknown', // Default
+          orgToken,
         };
-        
+
         if (!groupsMap.has(pr.title)) {
-          groupsMap.set(pr.title, { 
-            title: pr.title, 
-            prs: [], 
-            aggregateCiStatus: 'unknown', 
+          groupsMap.set(pr.title, {
+            title: pr.title,
+            prs: [],
+            aggregateCiStatus: 'unknown',
             isExpanded: false,
             workflowSummary: { success: 0, pending: 0, failed: 0 }
           });
@@ -164,7 +204,7 @@ export class App {
 
       this.prGroups.set(Array.from(groupsMap.values()));
       this.expandedPrIds.set(new Set());
-      
+
       // Trigger workflow summary refresh
       this.bumpWorkflowSummaryRefresh();
 
@@ -182,26 +222,26 @@ export class App {
     try {
       // Get full PR data (for commit count and head SHA)
       const prUrl = `https://api.github.com/repos/${pr.repoOwner}/${pr.repoName}/pulls/${pr.number}`;
-      const prData = await this.apiRequest<GitHubPullRequestDetails>(prUrl);
+      const prData = await this.apiRequest<GitHubPullRequestDetails>(prUrl, pr.orgToken);
       pr.isModified = prData.commits > 1;
       pr.head.sha = prData.head.sha;
       pr.commits = prData.commits;
 
       // Get repository settings to determine allowed merge methods
       const repoUrl = `https://api.github.com/repos/${pr.repoOwner}/${pr.repoName}`;
-      const repoData = await this.apiRequest<GitHubRepository>(repoUrl);
+      const repoData = await this.apiRequest<GitHubRepository>(repoUrl, pr.orgToken);
       pr.allowSquashMerge = repoData.allow_squash_merge;
       pr.allowMergeCommit = repoData.allow_merge_commit;
       pr.allowRebaseMerge = repoData.allow_rebase_merge;
 
       // Get combined CI status for the PR's head commit (as a fallback)
       const statusUrl = `https://api.github.com/repos/${pr.repoOwner}/${pr.repoName}/commits/${pr.head.sha}/status`;
-      const statusData = await this.apiRequest<GitHubCombinedStatusResponse>(statusUrl);
+      const statusData = await this.apiRequest<GitHubCombinedStatusResponse>(statusUrl, pr.orgToken);
       pr.ciStatus = this.mapCombinedStatus(statusData.state);
 
       // Get individual check runs for more detailed status
       const checksUrl = `https://api.github.com/repos/${pr.repoOwner}/${pr.repoName}/commits/${pr.head.sha}/check-runs`;
-      const checksData = await this.apiRequest<GitHubCheckRunsResponse>(checksUrl);
+      const checksData = await this.apiRequest<GitHubCheckRunsResponse>(checksUrl, pr.orgToken);
       if (checksData && checksData.check_runs) {
         pr.checkRuns = checksData.check_runs.map(cr => ({
           id: cr.id,
@@ -244,7 +284,7 @@ export class App {
     this.setPrProcessingState(prToUpdate, true);
     try {
       const url = `https://api.github.com/repos/${prToUpdate.repoOwner}/${prToUpdate.repoName}/pulls/${prToUpdate.number}`;
-      await this.apiRequest<void>(url, 'PATCH', { state: 'closed' });
+      await this.apiRequest<void>(url, prToUpdate.orgToken, 'PATCH', { state: 'closed' });
       // Remove PR from UI
       this.removePrFromGroup(prToUpdate);
       if (refreshSummary) {
@@ -267,15 +307,15 @@ export class App {
 
       // Step 1: Approve
       const reviewUrl = `https://api.github.com/repos/${prToUpdate.repoOwner}/${prToUpdate.repoName}/pulls/${prToUpdate.number}/reviews`;
-      await this.apiRequest<void>(reviewUrl, 'POST', { event: 'APPROVE' });
+      await this.apiRequest<void>(reviewUrl, prToUpdate.orgToken, 'POST', { event: 'APPROVE' });
 
       // Step 2: Determine merge method
       const mergeMethod = this.determineMergeMethod(prToUpdate);
 
       // Step 3: Merge with the appropriate method
       const mergeUrl = `https://api.github.com/repos/${prToUpdate.repoOwner}/${prToUpdate.repoName}/pulls/${prToUpdate.number}/merge`;
-      await this.apiRequest<void>(mergeUrl, 'PUT', { merge_method: mergeMethod });
-      
+      await this.apiRequest<void>(mergeUrl, prToUpdate.orgToken, 'PUT', { merge_method: mergeMethod });
+
       // Remove PR from UI
       this.removePrFromGroup(prToUpdate);
       if (refreshSummary) {
@@ -324,10 +364,10 @@ export class App {
 
   // --- HELPER & UTILITY METHODS ---
 
-  private async apiRequest<T>(url: string, method = 'GET', body?: object): Promise<T> {
+  private async apiRequest<T>(url: string, token: string, method = 'GET', body?: object): Promise<T> {
     const headers: HeadersInit = {
       'Accept': 'application/vnd.github.v3+json',
-      'Authorization': `token ${this.token()}`
+      'Authorization': `token ${token}`
     };
     const options: RequestInit = { method, headers };
     if (body) {
@@ -426,7 +466,7 @@ export class App {
 
     return { success, pending, failed };
   }
- 
+
   private mapCombinedStatus(state: GitHubCombinedStatusResponse['state'] | null | undefined): CiStatus {
     switch (state) {
       case 'success':
@@ -443,22 +483,22 @@ export class App {
 
   private determineMergeMethod(pr: PullRequest): string {
     const commits = pr.commits ?? 0;
-    
+
     // If only one commit and rebase is supported, use rebase
     if (commits === 1 && pr.allowRebaseMerge) {
       return 'rebase';
     }
-    
+
     // If more than one commit and squash is supported, use squash
     if (commits > 1 && pr.allowSquashMerge) {
       return 'squash';
     }
-    
+
     // Otherwise if merge is supported, use merge
     if (pr.allowMergeCommit) {
       return 'merge';
     }
-    
+
     // If none of those work, throw an error
     throw new Error(`No suitable merge method available for PR #${pr.number}`);
   }

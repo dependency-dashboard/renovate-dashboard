@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
+import { OrgConnection } from '../../models/pull-request.model';
 
 @Component({
   selector: 'app-search-form',
@@ -8,23 +9,52 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SearchFormComponent {
-  organization = input('');
-  token = input('');
+  connections = input<OrgConnection[]>([]);
   isLoading = input(false);
   formValid = input(false);
 
-  organizationChange = output<string>();
-  tokenChange = output<string>();
+  connectionsChange = output<OrgConnection[]>();
   searchTriggered = output<void>();
 
-  onOrganizationChange(event: Event): void {
-    const target = event.target as HTMLInputElement;
-    this.organizationChange.emit(target.value);
+  draftOrg = signal('');
+  draftToken = signal('');
+
+  isDuplicateOrg = computed(() => {
+    const org = this.draftOrg().trim();
+    return org.length > 0 && this.connections().some(c => c.organization === org);
+  });
+
+  draftValid = computed(() => {
+    const org = this.draftOrg().trim();
+    const token = this.draftToken().trim();
+    return org.length > 0 && token.length > 0 && !this.isDuplicateOrg();
+  });
+
+  onDraftOrgChange(event: Event): void {
+    this.draftOrg.set((event.target as HTMLInputElement).value);
   }
 
-  onTokenChange(event: Event): void {
-    const target = event.target as HTMLInputElement;
-    this.tokenChange.emit(target.value);
+  onDraftTokenChange(event: Event): void {
+    this.draftToken.set((event.target as HTMLInputElement).value);
+  }
+
+  addConnection(): void {
+    if (!this.draftValid()) return;
+    this.connectionsChange.emit([
+      ...this.connections(),
+      { organization: this.draftOrg().trim(), token: this.draftToken().trim() },
+    ]);
+    this.draftOrg.set('');
+    this.draftToken.set('');
+  }
+
+  removeConnection(organization: string): void {
+    this.connectionsChange.emit(this.connections().filter(c => c.organization !== organization));
+  }
+
+  onDraftEnter(event: Event): void {
+    event.preventDefault();
+    this.addConnection();
   }
 
   onSearch(): void {
