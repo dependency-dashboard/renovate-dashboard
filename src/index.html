@@ -10,14 +10,17 @@
     (function () {
       try {
         var theme = localStorage.getItem('theme');
-        var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        if (theme === 'dark' || (!theme && prefersDark)) {
+        if (theme === 'dark') {
           document.documentElement.classList.add('dark');
+        } else if (!theme) {
+          try {
+            if (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+              document.documentElement.classList.add('dark');
+            }
+          } catch (_) { /* matchMedia unavailable — leave as light */ }
         }
       } catch (_) {
-        // localStorage unavailable (e.g. Safari private mode, blocked storage);
-        // fall back to dark mode default.
-        document.documentElement.classList.add('dark');
+        // localStorage unavailable — leave as light, matching the Angular fallback
       }
     })();
   </script>
