@@ -1,6 +1,6 @@
 @if (isLoading()) {
   <span class="text-xs text-ink-3">Loading…</span>
-} @else if (summary().success > 0 || summary().pending > 0 || summary().failed > 0 || summary().incompleteResults) {
+} @else {
   <div class="flex items-center gap-3 text-xs text-ink-2">
     <span
       class="flex items-center gap-1.5"
