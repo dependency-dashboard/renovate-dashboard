@@ -46,6 +46,7 @@ function makeGroup(overrides: Partial<PrGroup> = {}): PrGroup {
 function mockMatchMedia(prefersDark: boolean) {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
+    configurable: true,
     value: vi.fn().mockImplementation((query: string) => ({
       matches: query === '(prefers-color-scheme: dark)' ? prefersDark : false,
       media: query,

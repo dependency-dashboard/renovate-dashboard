@@ -20,7 +20,12 @@
           } catch (_) { /* matchMedia unavailable — leave as light */ }
         }
       } catch (_) {
-        // localStorage unavailable — leave as light, matching the Angular fallback
+        // localStorage unavailable — mirror Angular's matchMedia fallback to avoid FOUC
+        try {
+          if (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (_) { /* matchMedia unavailable — leave as light */ }
       }
     })();
   </script>
