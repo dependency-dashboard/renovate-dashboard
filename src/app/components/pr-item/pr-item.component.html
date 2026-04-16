@@ -8,6 +8,7 @@
         class="flex items-center gap-2 text-left shrink-0"
         (click)="onToggleExpanded()"
         [attr.aria-expanded]="expanded()"
+        [attr.aria-label]="'Toggle details for ' + pr().repoOwner + '/' + pr().repoName + '#' + pr().number"
       >
         <svg
           class="w-4 h-4 text-ink-3 transition-transform duration-200 shrink-0"
@@ -24,6 +25,7 @@
         <a
           [href]="pr().html_url"
           target="_blank"
+          rel="noopener noreferrer"
           class="font-mono text-xs text-accent hover:underline truncate block"
         >
           {{ pr().repoOwner }}/{{ pr().repoName }}#{{ pr().number }}
@@ -47,6 +49,7 @@
             <a
               [href]="check.html_url"
               target="_blank"
+              rel="noopener noreferrer"
               class="flex items-center gap-1.5 text-ink-2 hover:text-ink transition-colors duration-200 group/check"
             >
               <span class="group-hover/check:underline">{{ check.name }}</span>
