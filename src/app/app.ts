@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, signal, computed, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, signal, computed, inject, effect } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
 import {
   PrGroup,
   PullRequest,
@@ -26,10 +27,12 @@ export class App {
   readonly sourceRepositoryUrl = getSourceRepositoryUrl();
   private storage = inject(SessionStorageService);
   private githubSearch = inject(GitHubSearchService);
+  private doc = inject(DOCUMENT);
 
   // --- STATE SIGNALS ---
   organization = signal<string>(this.storage.get(SESSION_KEYS.organization));
   token = signal<string>(this.storage.get(SESSION_KEYS.token));
+  darkMode = signal<boolean>(this.getInitialDarkMode());
   prGroups = signal<PrGroup[]>([]);
   isLoading = signal<boolean>(false);
   error = signal<string | null>(null);
@@ -40,6 +43,32 @@ export class App {
 
   // --- COMPUTED SIGNALS ---
   formValid = computed(() => this.organization().trim() !== '' && this.token().trim() !== '');
+
+  constructor() {
+    effect(() => {
+      if (this.darkMode()) {
+        this.doc.documentElement.classList.add('dark');
+      } else {
+        this.doc.documentElement.classList.remove('dark');
+      }
+    });
+  }
+
+  private getInitialDarkMode(): boolean {
+    try {
+      const stored = localStorage.getItem('theme');
+      if (stored) return stored === 'dark';
+    } catch { /* storage unavailable */ }
+    return true;
+  }
+
+  toggleDarkMode(): void {
+    const next = !this.darkMode();
+    this.darkMode.set(next);
+    try {
+      localStorage.setItem('theme', next ? 'dark' : 'light');
+    } catch { /* storage unavailable */ }
+  }
 
   // --- API ORCHESTRATION ---
   async searchAndProcessPullRequests() {

@@ -16,6 +16,8 @@ npm run lint           # Lint TS and HTML files
 
 To run a single test file: `npx ng test --include src/app/path/to/file.spec.ts`
 
+**Always run `npm run lint` and `npm test` before committing.** Lint checks Angular template rules (e.g. labels must be associated with controls) that are not caught by the TypeScript compiler.
+
 ## Configuration
 
 The header repository link is read from `NG_APP_SOURCE_REPOSITORY_URL`. Prefix commands to override it:

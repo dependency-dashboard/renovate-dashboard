@@ -62,7 +62,7 @@ describe('App', () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('h1')?.textContent).toContain('Renovate PR Dashboard');
+    expect(compiled.textContent).toContain('Renovate Dashboard');
   });
 
   it('should render GitHub link to source repository', () => {
@@ -365,7 +365,7 @@ describe('App', () => {
       app.incompleteResults.set(true);
       fixture.detectChanges();
 
-      expect(fixture.nativeElement.textContent).toContain('incomplete results');
+      expect(fixture.nativeElement.textContent).toContain('Incomplete results');
     });
 
     it('does not render the warning banner when incompleteResults is false', async () => {
@@ -373,7 +373,73 @@ describe('App', () => {
       fixture.componentInstance.incompleteResults.set(false);
       fixture.detectChanges();
 
-      expect(fixture.nativeElement.textContent).not.toContain('incomplete results');
+      expect(fixture.nativeElement.textContent).not.toContain('Incomplete results');
+    });
+  });
+
+  describe('darkMode', () => {
+    beforeEach(() => localStorage.clear());
+    afterEach(() => localStorage.clear());
+
+    it('defaults to true when no preference is stored', () => {
+      const app = TestBed.createComponent(App).componentInstance;
+      expect(app.darkMode()).toBe(true);
+    });
+
+    it('initialises to true when localStorage has "dark"', () => {
+      localStorage.setItem('theme', 'dark');
+      const app = TestBed.createComponent(App).componentInstance;
+      expect(app.darkMode()).toBe(true);
+    });
+
+    it('initialises to false when localStorage has "light"', () => {
+      localStorage.setItem('theme', 'light');
+      const app = TestBed.createComponent(App).componentInstance;
+      expect(app.darkMode()).toBe(false);
+    });
+
+    it('toggleDarkMode flips the signal each call', () => {
+      const app = TestBed.createComponent(App).componentInstance;
+      expect(app.darkMode()).toBe(true);
+
+      app.toggleDarkMode();
+      expect(app.darkMode()).toBe(false);
+
+      app.toggleDarkMode();
+      expect(app.darkMode()).toBe(true);
+    });
+
+    it('toggleDarkMode persists the new preference to localStorage', () => {
+      const app = TestBed.createComponent(App).componentInstance;
+
+      app.toggleDarkMode(); // true → false
+      expect(localStorage.getItem('theme')).toBe('light');
+
+      app.toggleDarkMode(); // false → true
+      expect(localStorage.getItem('theme')).toBe('dark');
+    });
+  });
+
+  describe('top bar', () => {
+    it('shows the connection chip when an organization is set', () => {
+      const fixture = TestBed.createComponent(App);
+      fixture.componentInstance.organization.set('my-org');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.textContent).toContain('github.com / my-org');
+    });
+
+    it('hides the connection chip when no organization is set', () => {
+      const fixture = TestBed.createComponent(App);
+      fixture.componentInstance.organization.set('');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.textContent).not.toContain('github.com /');
+    });
+
+    it('renders the theme toggle button with an accessible label', () => {
+      const fixture = TestBed.createComponent(App);
+      fixture.detectChanges();
+      const btn = fixture.nativeElement.querySelector('button[aria-label]') as HTMLButtonElement;
+      expect(btn?.getAttribute('aria-label')).toMatch(/switch to (light|dark) mode/i);
     });
   });
 

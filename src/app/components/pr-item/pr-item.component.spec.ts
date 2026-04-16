@@ -111,6 +111,26 @@ describe('PrItemComponent', () => {
     });
   });
 
+  describe('aria-labels', () => {
+    it('Close button has an aria-label identifying the PR', () => {
+      const fixture = TestBed.createComponent(PrItemComponent);
+      fixture.componentRef.setInput('pr', makePr({ repoOwner: 'test-org', repoName: 'test-repo', number: 42 }));
+      fixture.detectChanges();
+
+      const closeBtn = findButtonByText(fixture.nativeElement, 'Close');
+      expect(closeBtn.getAttribute('aria-label')).toBe('Close PR test-org/test-repo#42');
+    });
+
+    it('Approve & Merge button has an aria-label identifying the PR', () => {
+      const fixture = TestBed.createComponent(PrItemComponent);
+      fixture.componentRef.setInput('pr', makePr({ repoOwner: 'test-org', repoName: 'test-repo', number: 42, workflowStatus: 'success' }));
+      fixture.detectChanges();
+
+      const mergeBtn = findButtonByText(fixture.nativeElement, 'Approve & Merge');
+      expect(mergeBtn.getAttribute('aria-label')).toBe('Approve and merge PR test-org/test-repo#42');
+    });
+  });
+
   describe('formatConclusion', () => {
     it('formats snake_case conclusions to Title Case', () => {
       const fixture = TestBed.createComponent(PrItemComponent);

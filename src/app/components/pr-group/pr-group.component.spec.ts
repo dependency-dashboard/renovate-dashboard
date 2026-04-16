@@ -151,4 +151,26 @@ describe('PrGroupComponent', () => {
       expect(emitted).toHaveLength(1);
     });
   });
+
+  describe('aria-labels', () => {
+    it('Close All button has an aria-label identifying the group', () => {
+      const fixture = TestBed.createComponent(PrGroupComponent);
+      const group = makeGroup({ title: 'Update lodash', prs: [makePr()] });
+      fixture.componentRef.setInput('group', group);
+      fixture.detectChanges();
+
+      const closeAllBtn = findButtonByText(fixture.nativeElement, 'Close All');
+      expect(closeAllBtn.getAttribute('aria-label')).toBe('Close all PRs in group: Update lodash');
+    });
+
+    it('Approve & Merge All button has an aria-label identifying the group', () => {
+      const fixture = TestBed.createComponent(PrGroupComponent);
+      const group = makeGroup({ title: 'Update lodash', prs: [makePr({ workflowStatus: 'success' })] });
+      fixture.componentRef.setInput('group', group);
+      fixture.detectChanges();
+
+      const mergeAllBtn = findButtonByText(fixture.nativeElement, 'Approve & Merge All');
+      expect(mergeAllBtn.getAttribute('aria-label')).toBe('Approve and merge all PRs in group: Update lodash');
+    });
+  });
 });
