@@ -68,8 +68,9 @@ describe('App', () => {
   it('should render the title as an h1', () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
-    const h1 = fixture.nativeElement.querySelector('h1') as HTMLElement;
-    expect(h1?.textContent?.trim()).toContain('Renovate Dashboard');
+    const h1 = fixture.nativeElement.querySelector('h1');
+    expect(h1).toBeTruthy();
+    expect(h1!.textContent?.trim()).toContain('Renovate Dashboard');
   });
 
   it('should render GitHub link to source repository', () => {
