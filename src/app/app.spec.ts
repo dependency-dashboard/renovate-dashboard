@@ -43,8 +43,25 @@ function makeGroup(overrides: Partial<PrGroup> = {}): PrGroup {
   };
 }
 
+function mockMatchMedia(prefersDark: boolean) {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: query === '(prefers-color-scheme: dark)' ? prefersDark : false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+}
+
 describe('App', () => {
   beforeEach(async () => {
+    mockMatchMedia(false);
     await TestBed.configureTestingModule({
       imports: [App],
       providers: [provideZonelessChangeDetection()],
@@ -389,9 +406,15 @@ describe('App', () => {
     beforeEach(() => localStorage.clear());
     afterEach(() => localStorage.clear());
 
-    it('defaults to true when no preference is stored', () => {
+    it('defaults to dark when no preference is stored and system prefers dark', () => {
+      mockMatchMedia(true);
       const app = TestBed.createComponent(App).componentInstance;
       expect(app.darkMode()).toBe(true);
+    });
+
+    it('defaults to light when no preference is stored and system prefers light', () => {
+      const app = TestBed.createComponent(App).componentInstance;
+      expect(app.darkMode()).toBe(false);
     });
 
     it('initialises to true when localStorage has "dark"', () => {
@@ -407,6 +430,7 @@ describe('App', () => {
     });
 
     it('toggleDarkMode flips the signal each call', () => {
+      mockMatchMedia(true);
       const app = TestBed.createComponent(App).componentInstance;
       expect(app.darkMode()).toBe(true);
 
@@ -419,12 +443,12 @@ describe('App', () => {
 
     it('toggleDarkMode persists the new preference to localStorage', () => {
       const app = TestBed.createComponent(App).componentInstance;
+      // No stored preference + system prefers light → starts as false (light)
+      app.toggleDarkMode(); // false → true
+      expect(localStorage.getItem('theme')).toBe('dark');
 
       app.toggleDarkMode(); // true → false
       expect(localStorage.getItem('theme')).toBe('light');
-
-      app.toggleDarkMode(); // false → true
-      expect(localStorage.getItem('theme')).toBe('dark');
     });
   });
 

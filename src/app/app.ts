@@ -59,7 +59,7 @@ export class App {
       const stored = localStorage.getItem('theme');
       if (stored) return stored === 'dark';
     } catch { /* storage unavailable */ }
-    return true;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
   }
 
   toggleDarkMode(): void {
