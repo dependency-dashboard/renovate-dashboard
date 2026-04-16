@@ -59,6 +59,7 @@
           class="px-3 py-1.5 text-xs font-medium rounded-md border border-edge text-ink-2 hover:bg-ghost disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"
           (click)="onCloseGroup()"
           [disabled]="group().prs.length === 0 || isGroupProcessing()"
+          [attr.aria-label]="'Close all PRs in group: ' + group().title"
         >
           Close All
         </button>
@@ -67,6 +68,7 @@
           class="px-3 py-1.5 text-xs font-medium rounded-md bg-accent text-white hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"
           (click)="onApproveAndMergeGroup()"
           [disabled]="group().prs.length === 0 || isGroupMergeDisabled()"
+          [attr.aria-label]="'Approve and merge all PRs in group: ' + group().title"
         >
           Approve &amp; Merge All
         </button>

@@ -85,6 +85,7 @@
     <button
       (click)="onClosePr()"
       [disabled]="pr().isProcessing"
+      [attr.aria-label]="'Close PR ' + pr().repoOwner + '/' + pr().repoName + '#' + pr().number"
       class="px-3 py-1.5 text-xs font-medium rounded-md border border-edge text-ink-2 hover:bg-ghost disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"
     >
       @if (pr().isProcessing) {
@@ -96,6 +97,7 @@
     <button
       (click)="onApproveAndMergePr()"
       [disabled]="isMergeDisabled"
+      [attr.aria-label]="'Approve and merge PR ' + pr().repoOwner + '/' + pr().repoName + '#' + pr().number"
       class="px-3 py-1.5 text-xs font-medium rounded-md bg-accent text-white hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"
     >
       @if (pr().isProcessing) {
