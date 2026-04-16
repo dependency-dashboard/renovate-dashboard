@@ -59,7 +59,12 @@ export class App {
       const stored = localStorage.getItem('theme');
       if (stored) return stored === 'dark';
     } catch { /* storage unavailable */ }
-    return true;
+    try {
+      if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+        return window.matchMedia('(prefers-color-scheme: dark)').matches;
+      }
+    } catch { /* matchMedia unavailable */ }
+    return false;
   }
 
   toggleDarkMode(): void {
