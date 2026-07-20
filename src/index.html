@@ -22,7 +22,7 @@
           } catch (_) { /* matchMedia unavailable — leave as light */ }
         }
       } catch (_) {
-        // localStorage unavailable — mirror Angular's matchMedia fallback to avoid FOUC
+        // localStorage unavailable — fall back to the matchMedia check to avoid FOUC
         try {
           if (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches) {
             document.documentElement.classList.add('dark');
