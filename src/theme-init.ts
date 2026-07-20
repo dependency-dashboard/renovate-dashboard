@@ -11,30 +11,52 @@
  * can run synchronously before any CSS paints. This function exists solely
  * so that logic can be unit-tested.
  *
- * @param storage  Defaults to `localStorage`. Override in tests.
- * @param classList  Defaults to `document.documentElement.classList`. Override in tests.
- * @param matchMedia  Defaults to `window.matchMedia`. Override in tests.
+ * Defaults are resolved lazily from `globalThis` inside the function (not in
+ * the parameter list) so that calling it in a non-browser context — where
+ * `localStorage`/`document`/`window` are absent — degrades gracefully instead
+ * of throwing a `ReferenceError` before the fault-tolerant body runs, mirroring
+ * the inline script's behaviour.
+ *
+ * @param storage  Defaults to `globalThis.localStorage` when available. Override in tests.
+ * @param classList  Defaults to `document.documentElement.classList` when available. Override in tests.
+ * @param matchMedia  Defaults to `window.matchMedia` when available. Pass `null` to disable; override in tests.
  */
 export function applyInitialTheme(
-  storage: Pick<Storage, 'getItem'> = localStorage,
-  classList: Pick<DOMTokenList, 'add'> = document.documentElement.classList,
-  matchMedia: ((query: string) => Pick<MediaQueryList, 'matches'>) | null =
-    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-      ? (q) => window.matchMedia(q)
-      : null,
+  storage?: Pick<Storage, 'getItem'>,
+  classList?: Pick<DOMTokenList, 'add'>,
+  matchMedia?: ((query: string) => Pick<MediaQueryList, 'matches'>) | null,
 ): void {
+  const hasGlobal = typeof globalThis !== 'undefined';
+
+  const resolvedStorage =
+    storage ?? (hasGlobal && 'localStorage' in globalThis ? globalThis.localStorage : undefined);
+
+  const resolvedClassList =
+    classList ?? (hasGlobal ? globalThis.document?.documentElement?.classList : undefined);
+
+  const resolvedMatchMedia =
+    matchMedia !== undefined
+      ? matchMedia
+      : hasGlobal && typeof globalThis.window?.matchMedia === 'function'
+        ? (q: string) => globalThis.window.matchMedia(q)
+        : null;
+
   const applyIfSystemDark = () => {
     try {
-      if (matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) {
-        classList.add('dark');
+      if (
+        resolvedClassList &&
+        resolvedMatchMedia &&
+        resolvedMatchMedia('(prefers-color-scheme: dark)').matches
+      ) {
+        resolvedClassList.add('dark');
       }
     } catch { /* matchMedia unavailable — leave as light */ }
   };
 
   try {
-    const theme = storage.getItem('theme');
+    const theme = resolvedStorage?.getItem('theme');
     if (theme === 'dark') {
-      classList.add('dark');
+      resolvedClassList?.add('dark');
     } else if (!theme) {
       applyIfSystemDark();
     }

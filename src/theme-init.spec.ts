@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach } from 'vitest';
 import { applyInitialTheme } from './theme-init';
 
 function makeStorage(value: string | null): Pick<Storage, 'getItem'> {
