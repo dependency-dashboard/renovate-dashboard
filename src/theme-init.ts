@@ -28,9 +28,6 @@ export function applyInitialTheme(
 ): void {
   const hasGlobal = typeof globalThis !== 'undefined';
 
-  const resolvedStorage =
-    storage ?? (hasGlobal && 'localStorage' in globalThis ? globalThis.localStorage : undefined);
-
   const resolvedClassList =
     classList ?? (hasGlobal ? globalThis.document?.documentElement?.classList : undefined);
 
@@ -54,6 +51,11 @@ export function applyInitialTheme(
   };
 
   try {
+    // Reading `globalThis.localStorage` — not just calling `getItem` — can throw
+    // in storage-blocked environments, so resolve and access it inside the try to
+    // mirror the inline index.html script.
+    const resolvedStorage =
+      storage ?? (hasGlobal && 'localStorage' in globalThis ? globalThis.localStorage : undefined);
     const theme = resolvedStorage?.getItem('theme');
     if (theme === 'dark') {
       resolvedClassList?.add('dark');

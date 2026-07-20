@@ -6,7 +6,7 @@ function makeStorage(value: string | null): Pick<Storage, 'getItem'> {
 
 function throwingStorage(): Pick<Storage, 'getItem'> {
   return {
-    getItem: () => { throw new DOMException('Storage unavailable', 'SecurityError'); },
+    getItem: () => { throw new Error('Storage unavailable'); },
   };
 }
 
