@@ -20,8 +20,10 @@ export class SearchFormComponent {
   draftToken = signal('');
 
   isDuplicateOrg = computed(() => {
-    const org = this.draftOrg().trim();
-    return org.length > 0 && this.connections().some(c => c.organization === org);
+    // GitHub org names are case-insensitive, so compare normalized values while
+    // preserving the user's typed casing for display.
+    const org = this.draftOrg().trim().toLowerCase();
+    return org.length > 0 && this.connections().some(c => c.organization.trim().toLowerCase() === org);
   });
 
   draftValid = computed(() => {

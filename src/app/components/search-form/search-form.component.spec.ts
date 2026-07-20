@@ -85,6 +85,16 @@ describe('SearchFormComponent', () => {
       expect(fixture.nativeElement.textContent).toContain('Already added');
     });
 
+    it('detects duplicates case-insensitively (GitHub orgs are case-insensitive)', () => {
+      const fixture = TestBed.createComponent(SearchFormComponent);
+      fixture.componentRef.setInput('connections', [ORG_A]); // 'org-a'
+      fixture.componentInstance.draftOrg.set('  ORG-A  ');
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.isDuplicateOrg()).toBe(true);
+      expect(fixture.componentInstance.draftValid()).toBe(false);
+    });
+
     it('emits connectionsChange with the new connection appended when Add is clicked', () => {
       const fixture = TestBed.createComponent(SearchFormComponent);
       fixture.componentRef.setInput('connections', [ORG_A]);

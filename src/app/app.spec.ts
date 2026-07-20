@@ -5,6 +5,7 @@ import { App } from './app';
 import { getSourceRepositoryUrl } from './config/source-repository-url';
 import { PullRequest, PrGroup } from './models/pull-request.model';
 import { SessionStorageService } from './services/session-storage.service';
+import { GitHubSearchService } from './services/github-search.service';
 
 interface AppPrivate {
   determineMergeMethod(pr: PullRequest): string;
@@ -124,6 +125,18 @@ describe('App', () => {
         { organization: 'org-b', token: 'ghp_bbb' },
       ]);
       expect(app.formValid()).toBe(true);
+    });
+
+    it('is false when the only connection has an empty token', () => {
+      const app = TestBed.createComponent(App).componentInstance;
+      app.connections.set([{ organization: 'my-org', token: '' }]);
+      expect(app.formValid()).toBe(false);
+    });
+
+    it('is false when the only connection has a whitespace-only org', () => {
+      const app = TestBed.createComponent(App).componentInstance;
+      app.connections.set([{ organization: '   ', token: 'ghp_token' }]);
+      expect(app.formValid()).toBe(false);
     });
   });
 
@@ -334,6 +347,42 @@ describe('App', () => {
     });
   });
 
+  describe('searchAndProcessPullRequests — multi-org partial failure', () => {
+    it('flags incomplete (not error) when one org fails but another succeeds', async () => {
+      const search = {
+        fetchAllSearchItems: vi.fn()
+          .mockResolvedValueOnce({ items: [], incompleteResults: false }) // org-a succeeds
+          .mockRejectedValueOnce(new Error('org-b is down')),             // org-b fails
+      };
+      TestBed.overrideProvider(GitHubSearchService, { useValue: search });
+
+      const app = TestBed.createComponent(App).componentInstance;
+      app.connections.set([
+        { organization: 'org-a', token: 'a' },
+        { organization: 'org-b', token: 'b' },
+      ]);
+
+      await app.searchAndProcessPullRequests();
+
+      expect(app.incompleteResults()).toBe(true);
+      expect(app.error()).toBeNull();
+    });
+
+    it('surfaces an error when every org fails', async () => {
+      const search = {
+        fetchAllSearchItems: vi.fn().mockRejectedValue(new Error('everything is down')),
+      };
+      TestBed.overrideProvider(GitHubSearchService, { useValue: search });
+
+      const app = TestBed.createComponent(App).componentInstance;
+      app.connections.set([{ organization: 'org-a', token: 'a' }]);
+
+      await app.searchAndProcessPullRequests();
+
+      expect(app.error()).toContain('everything is down');
+    });
+  });
+
   describe('apiRequest error handling', () => {
     it('throws with the API error message on non-ok response', async () => {
       const app = TestBed.createComponent(App).componentInstance;
@@ -508,6 +557,55 @@ describe('App', () => {
       app.onConnectionsChange(newConnections);
 
       expect(storageSpy.setJson).toHaveBeenCalledWith('connections', newConnections);
+    });
+
+    it('treats a stored empty array as authoritative and does not re-migrate legacy keys', () => {
+      // User removed all orgs (connections = []) but legacy keys still linger.
+      const storageSpy = makeStorageSpy([], 'legacy-org', 'legacy-token');
+      TestBed.overrideProvider(SessionStorageService, { useValue: storageSpy });
+
+      const app = TestBed.createComponent(App).componentInstance;
+
+      expect(app.connections()).toEqual([]);
+      expect(storageSpy.setJson).not.toHaveBeenCalled();
+    });
+
+    it('does not migrate when only one legacy key is present', () => {
+      const storageSpy = makeStorageSpy(null, 'legacy-org', ''); // org but no token
+      TestBed.overrideProvider(SessionStorageService, { useValue: storageSpy });
+
+      const app = TestBed.createComponent(App).componentInstance;
+
+      expect(app.connections()).toEqual([]);
+      expect(storageSpy.setJson).not.toHaveBeenCalled();
+    });
+
+    it('sanitizes stored connections: trims, drops invalid entries, and de-duplicates by org', () => {
+      const storageSpy = makeStorageSpy([
+        { organization: '  org-a  ', token: '  t1  ' },
+        { organization: 'ORG-A', token: 't2' }, // case-insensitive duplicate
+        { organization: '', token: 'no-org' },   // invalid: empty org
+        { organization: 'org-b', token: '' },     // invalid: empty token
+      ]);
+      TestBed.overrideProvider(SessionStorageService, { useValue: storageSpy });
+
+      const app = TestBed.createComponent(App).componentInstance;
+
+      expect(app.connections()).toEqual([{ organization: 'org-a', token: 't1' }]);
+    });
+
+    it('sanitizes connections passed to onConnectionsChange before storing', () => {
+      const storageSpy = makeStorageSpy();
+      TestBed.overrideProvider(SessionStorageService, { useValue: storageSpy });
+
+      const app = TestBed.createComponent(App).componentInstance;
+      app.onConnectionsChange([
+        { organization: ' my-org ', token: ' ghp_test ' },
+        { organization: 'my-org', token: 'dupe' },
+      ]);
+
+      expect(app.connections()).toEqual([{ organization: 'my-org', token: 'ghp_test' }]);
+      expect(storageSpy.setJson).toHaveBeenCalledWith('connections', [{ organization: 'my-org', token: 'ghp_test' }]);
     });
   });
 });

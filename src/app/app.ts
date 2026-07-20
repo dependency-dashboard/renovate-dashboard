@@ -42,7 +42,12 @@ export class App {
   expandedPrIds = signal<Set<number>>(new Set());
 
   // --- COMPUTED SIGNALS ---
-  formValid = computed(() => this.connections().length > 0);
+  // Valid only when at least one connection has both an org and a token, so a
+  // malformed entry (e.g. from a partial legacy migration) can't enable a search
+  // that would fail with an empty token.
+  formValid = computed(() =>
+    this.connections().some(c => c.organization.trim().length > 0 && c.token.trim().length > 0),
+  );
 
   constructor() {
     effect(() => {
@@ -57,27 +62,52 @@ export class App {
   // --- CONNECTION MANAGEMENT ---
 
   onConnectionsChange(connections: OrgConnection[]): void {
-    this.connections.set(connections);
-    this.storage.setJson(SESSION_KEYS.connections, connections);
+    const sanitized = this.sanitizeConnections(connections);
+    this.connections.set(sanitized);
+    this.storage.setJson(SESSION_KEYS.connections, sanitized);
   }
 
   private loadConnections(): OrgConnection[] {
-    // If the new connections key exists, use it directly
+    // The new connections key is authoritative once present — even an empty
+    // array means "the user has no orgs configured", so we must not fall back
+    // to migrating legacy keys (that would repopulate after removing all orgs).
     const stored = this.storage.getJson<OrgConnection[]>(SESSION_KEYS.connections);
-    if (Array.isArray(stored) && stored.length > 0) {
-      return stored;
+    if (Array.isArray(stored)) {
+      return this.sanitizeConnections(stored);
     }
 
-    // Migrate from old single-org keys
-    const org = this.storage.get(SESSION_KEYS.organization);
-    const token = this.storage.get(SESSION_KEYS.token);
-    if (org || token) {
+    // Migrate from old single-org keys only when the new key is absent, and
+    // only when both legacy values are non-empty after trimming (a lone org or
+    // token can't make a valid connection).
+    const org = this.storage.get(SESSION_KEYS.organization).trim();
+    const token = this.storage.get(SESSION_KEYS.token).trim();
+    if (org && token) {
       const migrated: OrgConnection[] = [{ organization: org, token }];
       this.storage.setJson(SESSION_KEYS.connections, migrated);
       return migrated;
     }
 
     return [];
+  }
+
+  /** Trim, drop entries missing an org or token, and de-duplicate by org (case-insensitive). */
+  private sanitizeConnections(connections: OrgConnection[]): OrgConnection[] {
+    const seen = new Set<string>();
+    const result: OrgConnection[] = [];
+    for (const c of connections) {
+      if (!c || typeof c.organization !== 'string' || typeof c.token !== 'string') {
+        continue;
+      }
+      const organization = c.organization.trim();
+      const token = c.token.trim();
+      const key = organization.toLowerCase();
+      if (!organization || !token || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      result.push({ organization, token });
+    }
+    return result;
   }
 
   // --- DARK MODE ---
@@ -118,8 +148,10 @@ export class App {
     const connections = this.connections();
 
     try {
-      // Step 1: Search for all open Renovate PRs across all configured orgs in parallel
-      const searchResults = await Promise.all(
+      // Step 1: Search for all open Renovate PRs across all configured orgs in
+      // parallel. Use allSettled so one org's failure doesn't discard the others'
+      // results — merge what succeeded and flag the rest as incomplete.
+      const searchResults = await Promise.allSettled(
         connections.map(conn =>
           this.githubSearch.fetchAllSearchItems(
             `is:pr author:app/renovate org:${conn.organization} is:open`,
@@ -128,12 +160,25 @@ export class App {
         )
       );
 
-      // Merge results from all orgs
+      // If every org failed, surface the error rather than a misleading empty state.
+      const firstRejection = searchResults.find(r => r.status === 'rejected');
+      if (firstRejection?.status === 'rejected' && !searchResults.some(r => r.status === 'fulfilled')) {
+        throw firstRejection.reason instanceof Error
+          ? firstRejection.reason
+          : new Error('Search failed for all configured organizations.');
+      }
+
+      // Merge results from all orgs; a rejected org counts as incomplete.
       const allItems: GitHubIssueSearchItem[] = [];
       let anyIncomplete = false;
-      for (const { items, incompleteResults } of searchResults) {
-        allItems.push(...items);
-        if (incompleteResults) anyIncomplete = true;
+      for (const result of searchResults) {
+        if (result.status === 'fulfilled') {
+          allItems.push(...result.value.items);
+          if (result.value.incompleteResults) anyIncomplete = true;
+        } else {
+          anyIncomplete = true;
+          console.error('Renovate PR search failed for one organization', result.reason);
+        }
       }
       this.incompleteResults.set(anyIncomplete);
 
@@ -156,7 +201,13 @@ export class App {
           return;
         }
 
-        const orgToken = tokenByOrg.get(repoOwner.toLowerCase()) ?? '';
+        // Every returned PR should belong to a configured org, but guard against
+        // an unexpected owner rather than issuing an API call with an empty token.
+        const orgToken = tokenByOrg.get(repoOwner.toLowerCase());
+        if (!orgToken) {
+          console.warn(`No configured token for "${repoOwner}"; skipping PR #${item.number}`);
+          return;
+        }
 
         const pr: PullRequest = {
           id: item.id,
