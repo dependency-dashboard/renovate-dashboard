@@ -6,6 +6,8 @@
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <!-- Theme initialisation: mirrors applyInitialTheme() in src/theme-init.ts (tested there).
+       Must remain an inline IIFE — a deferred module script would cause FOUC. -->
   <script>
     (function () {
       try {
@@ -20,7 +22,7 @@
           } catch (_) { /* matchMedia unavailable — leave as light */ }
         }
       } catch (_) {
-        // localStorage unavailable — mirror Angular's matchMedia fallback to avoid FOUC
+        // localStorage unavailable — fall back to the matchMedia check to avoid FOUC
         try {
           if (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches) {
             document.documentElement.classList.add('dark');
