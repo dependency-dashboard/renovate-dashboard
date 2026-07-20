@@ -2,5 +2,41 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended"
+  ],
+  "packageRules": [
+    {
+      "description": "Group the Angular framework, build tooling, and angular-eslint so their version-locked majors update together in one PR",
+      "matchPackageNames": [
+        "@angular/**",
+        "@angular-devkit/**",
+        "angular-eslint",
+        "zone.js"
+      ],
+      "groupName": "angular packages"
+    },
+    {
+      "description": "Never bump TypeScript on its own — Angular pins it to a narrow range (e.g. Angular 22 needs >=6.0 <6.1), so let major/minor TS moves ride along with the grouped Angular upgrade via ng update",
+      "matchPackageNames": [
+        "typescript"
+      ],
+      "matchUpdateTypes": [
+        "major",
+        "minor"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Hold major Angular upgrades behind manual approval in the Dependency Dashboard, since they require running ng update migrations",
+      "matchPackageNames": [
+        "@angular/**",
+        "@angular-devkit/**",
+        "angular-eslint",
+        "zone.js"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "dependencyDashboardApproval": true
+    }
   ]
 }
