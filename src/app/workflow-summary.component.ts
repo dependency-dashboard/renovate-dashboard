@@ -18,12 +18,18 @@ export class WorkflowSummaryComponent {
   summary = signal<WorkflowSummary>({ success: 0, pending: 0, failed: 0 });
   isLoading = signal<boolean>(false);
 
+  private lastProcessedTrigger = 0;
+
   constructor() {
     effect(() => {
       const trigger = this.refreshTrigger();
+      // Track isLoading so that a trigger bumped mid-load is retried once the
+      // in-flight load finishes, instead of being silently dropped.
+      const loading = this.isLoading();
       const conns = untracked(this.connections);
 
-      if (conns.length > 0 && trigger > 0 && !untracked(this.isLoading)) {
+      if (trigger > 0 && trigger !== this.lastProcessedTrigger && conns.length > 0 && !loading) {
+        this.lastProcessedTrigger = trigger;
         void this.loadSummary(conns);
       }
     });

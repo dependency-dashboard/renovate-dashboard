@@ -2,7 +2,7 @@ import { provideZonelessChangeDetection } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
 import { WorkflowSummaryComponent } from './workflow-summary.component';
-import { WorkflowSummaryService } from './workflow-summary.service';
+import { WorkflowSummaryService, WorkflowSummary } from './workflow-summary.service';
 import { OrgConnection } from './models/pull-request.model';
 
 const CONNECTIONS: OrgConnection[] = [{ organization: 'my-org', token: 'ghp_test' }];
@@ -77,6 +77,34 @@ describe('WorkflowSummaryComponent', () => {
     TestBed.flushEffects();
 
     expect(summaryServiceSpy.getSummary).not.toHaveBeenCalled();
+  });
+
+  it('retries a trigger bumped during an in-flight load once loading completes', async () => {
+    // First load hangs until we resolve it, keeping isLoading true.
+    let resolveFirst!: (v: WorkflowSummary) => void;
+    const firstLoad = new Promise<WorkflowSummary>(res => { resolveFirst = res; });
+    summaryServiceSpy.getSummary
+      .mockReturnValueOnce(firstLoad)
+      .mockResolvedValueOnce({ success: 1, pending: 0, failed: 0 });
+
+    const fixture = TestBed.createComponent(WorkflowSummaryComponent);
+    fixture.componentRef.setInput('connections', CONNECTIONS);
+    fixture.componentRef.setInput('refreshTrigger', 1);
+    TestBed.flushEffects();
+    expect(summaryServiceSpy.getSummary).toHaveBeenCalledTimes(1);
+
+    // Bump the trigger while the first load is still in flight — must not be dropped.
+    fixture.componentRef.setInput('refreshTrigger', 2);
+    TestBed.flushEffects();
+    expect(summaryServiceSpy.getSummary).toHaveBeenCalledTimes(1);
+
+    // Complete the first load; the missed trigger should now be processed.
+    resolveFirst({ success: 0, pending: 0, failed: 0 });
+    await firstLoad;
+    await Promise.resolve();
+    TestBed.flushEffects();
+
+    expect(summaryServiceSpy.getSummary).toHaveBeenCalledTimes(2);
   });
 
   it('renders the warning indicator when incompleteResults is true', async () => {

@@ -42,9 +42,9 @@ export class App {
   expandedPrIds = signal<Set<number>>(new Set());
 
   // --- COMPUTED SIGNALS ---
-  // Valid only when at least one connection has both an org and a token, so a
-  // malformed entry (e.g. from a partial legacy migration) can't enable a search
-  // that would fail with an empty token.
+  // Enabled when at least one connection is usable (both fields non-empty).
+  // searchAndProcessPullRequests() sanitizes again before searching, so any
+  // malformed entries are skipped rather than issuing an empty-token request.
   formValid = computed(() =>
     this.connections().some(c => c.organization.trim().length > 0 && c.token.trim().length > 0),
   );
@@ -148,7 +148,10 @@ export class App {
     this.incompleteResults.set(false);
     this.searched.set(true);
 
-    const connections = this.connections();
+    // Sanitize again here so the search never issues a request for a malformed
+    // connection, regardless of how connections() was populated. formValid()
+    // guarantees at least one survives.
+    const connections = this.sanitizeConnections(this.connections());
 
     try {
       // Step 1: Search for all open Renovate PRs across all configured orgs in

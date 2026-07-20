@@ -381,6 +381,25 @@ describe('App', () => {
 
       expect(app.error()).toContain('everything is down');
     });
+
+    it('sanitizes connections before searching, skipping malformed entries', async () => {
+      const search = {
+        fetchAllSearchItems: vi.fn().mockResolvedValue({ items: [], incompleteResults: false }),
+      };
+      TestBed.overrideProvider(GitHubSearchService, { useValue: search });
+
+      const app = TestBed.createComponent(App).componentInstance;
+      // A malformed entry (empty token) slips into the signal directly.
+      app.connections.set([
+        { organization: 'good-org', token: 'ghp_good' },
+        { organization: 'bad-org', token: '' },
+      ]);
+
+      await app.searchAndProcessPullRequests();
+
+      expect(search.fetchAllSearchItems).toHaveBeenCalledTimes(1);
+      expect(search.fetchAllSearchItems).toHaveBeenCalledWith(expect.stringContaining('org:good-org'), 'ghp_good');
+    });
   });
 
   describe('apiRequest error handling', () => {
