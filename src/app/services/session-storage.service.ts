@@ -46,6 +46,17 @@ export class SessionStorageService {
     }
   }
 
+  remove(key: string): void {
+    if (!this.available) {
+      return;
+    }
+    try {
+      sessionStorage.removeItem(key);
+    } catch {
+      // Swallow errors to keep this a no-op when storage is unavailable.
+    }
+  }
+
   getJson<T>(key: string): T | null {
     if (!this.available) {
       return null;

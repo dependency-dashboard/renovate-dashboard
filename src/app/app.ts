@@ -84,6 +84,9 @@ export class App {
     if (org && token) {
       const migrated: OrgConnection[] = [{ organization: org, token }];
       this.storage.setJson(SESSION_KEYS.connections, migrated);
+      // Drop the now-migrated legacy keys so they don't linger for the session.
+      this.storage.remove(SESSION_KEYS.organization);
+      this.storage.remove(SESSION_KEYS.token);
       return migrated;
     }
 

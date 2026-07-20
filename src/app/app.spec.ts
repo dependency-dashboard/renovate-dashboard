@@ -523,6 +523,7 @@ describe('App', () => {
       return {
         get: vi.fn((key: string) => key === 'organization' ? orgValue : tokenValue),
         set: vi.fn(),
+        remove: vi.fn(),
         getJson: vi.fn((key: string) => key === 'connections' ? connectionsValue : null),
         setJson: vi.fn(),
       };
@@ -546,6 +547,16 @@ describe('App', () => {
 
       expect(app.connections()).toEqual([{ organization: 'legacy-org', token: 'legacy-token' }]);
       expect(storageSpy.setJson).toHaveBeenCalledWith('connections', [{ organization: 'legacy-org', token: 'legacy-token' }]);
+    });
+
+    it('clears the legacy organization/token keys after migrating', () => {
+      const storageSpy = makeStorageSpy(null, 'legacy-org', 'legacy-token');
+      TestBed.overrideProvider(SessionStorageService, { useValue: storageSpy });
+
+      TestBed.createComponent(App);
+
+      expect(storageSpy.remove).toHaveBeenCalledWith('organization');
+      expect(storageSpy.remove).toHaveBeenCalledWith('token');
     });
 
     it('persists connections to session storage when onConnectionsChange is called', () => {
