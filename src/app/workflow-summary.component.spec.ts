@@ -2,7 +2,10 @@ import { provideZonelessChangeDetection } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
 import { WorkflowSummaryComponent } from './workflow-summary.component';
-import { WorkflowSummaryService } from './workflow-summary.service';
+import { WorkflowSummaryService, WorkflowSummary } from './workflow-summary.service';
+import { OrgConnection } from './models/pull-request.model';
+
+const CONNECTIONS: OrgConnection[] = [{ organization: 'my-org', token: 'ghp_test' }];
 
 describe('WorkflowSummaryComponent', () => {
   let summaryServiceSpy: { getSummary: ReturnType<typeof vi.fn> };
@@ -27,74 +30,81 @@ describe('WorkflowSummaryComponent', () => {
 
   it('does not load when refreshTrigger is 0', async () => {
     const fixture = TestBed.createComponent(WorkflowSummaryComponent);
-    fixture.componentRef.setInput('organization', 'my-org');
-    fixture.componentRef.setInput('token', 'ghp_test');
+    fixture.componentRef.setInput('connections', CONNECTIONS);
     fixture.componentRef.setInput('refreshTrigger', 0);
     TestBed.flushEffects();
 
     expect(summaryServiceSpy.getSummary).not.toHaveBeenCalled();
   });
 
-  it('does not load when organization or token is missing', async () => {
+  it('does not load when connections list is empty', async () => {
     const fixture = TestBed.createComponent(WorkflowSummaryComponent);
-    fixture.componentRef.setInput('organization', '');
-    fixture.componentRef.setInput('token', '');
+    fixture.componentRef.setInput('connections', []);
     fixture.componentRef.setInput('refreshTrigger', 1);
     TestBed.flushEffects();
 
     expect(summaryServiceSpy.getSummary).not.toHaveBeenCalled();
   });
 
-  it('loads summary when organization, token, and refreshTrigger > 0 are provided', async () => {
+  it('loads summary when connections and refreshTrigger > 0 are provided', async () => {
     const fixture = TestBed.createComponent(WorkflowSummaryComponent);
-    fixture.componentRef.setInput('organization', 'my-org');
-    fixture.componentRef.setInput('token', 'ghp_test');
+    fixture.componentRef.setInput('connections', CONNECTIONS);
     fixture.componentRef.setInput('refreshTrigger', 1);
     TestBed.flushEffects();
 
-    expect(summaryServiceSpy.getSummary).toHaveBeenCalledWith('my-org', 'ghp_test');
+    expect(summaryServiceSpy.getSummary).toHaveBeenCalledWith(CONNECTIONS);
   });
 
   it('updates summary signal after successful load', async () => {
     const fixture = TestBed.createComponent(WorkflowSummaryComponent);
-    fixture.componentRef.setInput('organization', 'my-org');
-    fixture.componentRef.setInput('token', 'ghp_test');
+    fixture.componentRef.setInput('connections', CONNECTIONS);
     fixture.componentRef.setInput('refreshTrigger', 1);
     TestBed.flushEffects();
 
-    // Wait for the async getSummary to resolve
     await summaryServiceSpy.getSummary.mock.results[0].value;
 
     expect(fixture.componentInstance.summary()).toEqual({ success: 3, pending: 1, failed: 2 });
   });
 
-  it('does not reload when organization changes without a refreshTrigger bump', () => {
+  it('does not reload when connections change without a refreshTrigger bump', () => {
     const fixture = TestBed.createComponent(WorkflowSummaryComponent);
-    fixture.componentRef.setInput('organization', 'my-org');
-    fixture.componentRef.setInput('token', 'ghp_test');
+    fixture.componentRef.setInput('connections', CONNECTIONS);
     fixture.componentRef.setInput('refreshTrigger', 1);
     TestBed.flushEffects();
     summaryServiceSpy.getSummary.mockClear();
 
-    // Simulate the user editing the organization field without re-submitting
-    fixture.componentRef.setInput('organization', 'my-org-edited');
+    fixture.componentRef.setInput('connections', [{ organization: 'other-org', token: 'ghp_other' }]);
     TestBed.flushEffects();
 
     expect(summaryServiceSpy.getSummary).not.toHaveBeenCalled();
   });
 
-  it('does not reload when token changes without a refreshTrigger bump', () => {
+  it('retries a trigger bumped during an in-flight load once loading completes', async () => {
+    // First load hangs until we resolve it, keeping isLoading true.
+    let resolveFirst!: (v: WorkflowSummary) => void;
+    const firstLoad = new Promise<WorkflowSummary>(res => { resolveFirst = res; });
+    summaryServiceSpy.getSummary
+      .mockReturnValueOnce(firstLoad)
+      .mockResolvedValueOnce({ success: 1, pending: 0, failed: 0 });
+
     const fixture = TestBed.createComponent(WorkflowSummaryComponent);
-    fixture.componentRef.setInput('organization', 'my-org');
-    fixture.componentRef.setInput('token', 'ghp_test');
+    fixture.componentRef.setInput('connections', CONNECTIONS);
     fixture.componentRef.setInput('refreshTrigger', 1);
     TestBed.flushEffects();
-    summaryServiceSpy.getSummary.mockClear();
+    expect(summaryServiceSpy.getSummary).toHaveBeenCalledTimes(1);
 
-    fixture.componentRef.setInput('token', 'ghp_new_token');
+    // Bump the trigger while the first load is still in flight — must not be dropped.
+    fixture.componentRef.setInput('refreshTrigger', 2);
+    TestBed.flushEffects();
+    expect(summaryServiceSpy.getSummary).toHaveBeenCalledTimes(1);
+
+    // Complete the first load; the missed trigger should now be processed.
+    resolveFirst({ success: 0, pending: 0, failed: 0 });
+    await firstLoad;
+    await Promise.resolve();
     TestBed.flushEffects();
 
-    expect(summaryServiceSpy.getSummary).not.toHaveBeenCalled();
+    expect(summaryServiceSpy.getSummary).toHaveBeenCalledTimes(2);
   });
 
   it('renders the warning indicator when incompleteResults is true', async () => {
@@ -125,8 +135,7 @@ describe('WorkflowSummaryComponent', () => {
     summaryServiceSpy.getSummary.mockRejectedValueOnce(new Error('Network error'));
 
     const fixture = TestBed.createComponent(WorkflowSummaryComponent);
-    fixture.componentRef.setInput('organization', 'my-org');
-    fixture.componentRef.setInput('token', 'ghp_test');
+    fixture.componentRef.setInput('connections', CONNECTIONS);
     fixture.componentRef.setInput('refreshTrigger', 1);
     TestBed.flushEffects();
 

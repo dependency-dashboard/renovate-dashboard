@@ -1,5 +1,10 @@
 export type CiStatus = 'success' | 'failure' | 'pending' | 'unknown';
 
+export interface OrgConnection {
+  organization: string;
+  token: string;
+}
+
 export interface GitHubUser {
   login: string;
   avatar_url: string;
@@ -76,6 +81,7 @@ export interface PullRequest {
   checkRuns: CheckRun[];
   isProcessing: boolean; // For button loading states
   workflowStatus: CiStatus;
+  orgToken: string; // Token for the org that owns this PR's repository
   commits?: number; // Number of commits in the PR
   allowSquashMerge?: boolean;
   allowMergeCommit?: boolean;

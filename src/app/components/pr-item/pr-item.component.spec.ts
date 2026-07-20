@@ -25,6 +25,7 @@ function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
     checkRuns: [],
     isProcessing: false,
     workflowStatus: 'unknown',
+    orgToken: 'ghp_test',
     ...overrides,
   };
 }

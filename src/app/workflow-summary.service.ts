@@ -5,6 +5,7 @@ import {
   GitHubCombinedStatusResponse,
   GitHubIssueSearchItem,
   GitHubPullRequestDetails,
+  OrgConnection,
 } from './models/pull-request.model';
 import { GitHubSearchService } from './services/github-search.service';
 
@@ -19,17 +20,36 @@ export interface WorkflowSummary {
 export class WorkflowSummaryService {
   private githubSearch = inject(GitHubSearchService);
 
-  async getSummary(organization: string, token: string): Promise<WorkflowSummary> {
-    if (!organization || !token) {
+  async getSummary(connections: OrgConnection[]): Promise<WorkflowSummary> {
+    if (connections.length === 0) {
       return { success: 0, pending: 0, failed: 0 };
     }
 
-    try {
-      return await this.fetchWorkflowSummary(organization, token);
-    } catch (error) {
-      console.error('Failed to fetch workflow summary', error);
-      return { success: 0, pending: 0, failed: 0 };
-    }
+    // allSettled so one org's failure doesn't collapse the whole summary; sum the
+    // successful orgs and flag the rest via incompleteResults.
+    const settled = await Promise.allSettled(
+      connections.map(conn => this.fetchWorkflowSummary(conn.organization, conn.token))
+    );
+
+    const anyRejected = settled.some(r => r.status === 'rejected');
+    settled.forEach(r => {
+      if (r.status === 'rejected') {
+        console.error('Failed to fetch workflow summary for one organization', r.reason);
+      }
+    });
+
+    return settled
+      .filter((r): r is PromiseFulfilledResult<WorkflowSummary> => r.status === 'fulfilled')
+      .map(r => r.value)
+      .reduce(
+        (acc, r) => ({
+          success: acc.success + r.success,
+          pending: acc.pending + r.pending,
+          failed: acc.failed + r.failed,
+          incompleteResults: acc.incompleteResults || Boolean(r.incompleteResults),
+        }),
+        { success: 0, pending: 0, failed: 0, incompleteResults: anyRejected }
+      );
   }
 
   private async fetchWorkflowSummary(organization: string, token: string): Promise<WorkflowSummary> {

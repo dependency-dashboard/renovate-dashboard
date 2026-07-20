@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, effect, input, signal, inject, untracked } from '@angular/core';
 import { WorkflowSummaryService, WorkflowSummary } from './workflow-summary.service';
+import { OrgConnection } from './models/pull-request.model';
 
 @Component({
   selector: 'app-workflow-summary',
@@ -11,29 +12,33 @@ import { WorkflowSummaryService, WorkflowSummary } from './workflow-summary.serv
 export class WorkflowSummaryComponent {
   private summaryService = inject(WorkflowSummaryService);
 
-  organization = input('');
-  token = input('');
+  connections = input<OrgConnection[]>([]);
   refreshTrigger = input(0);
 
   summary = signal<WorkflowSummary>({ success: 0, pending: 0, failed: 0 });
   isLoading = signal<boolean>(false);
 
+  private lastProcessedTrigger = 0;
+
   constructor() {
     effect(() => {
       const trigger = this.refreshTrigger();
-      const org = untracked(this.organization);
-      const tkn = untracked(this.token);
+      // Track isLoading so that a trigger bumped mid-load is retried once the
+      // in-flight load finishes, instead of being silently dropped.
+      const loading = this.isLoading();
+      const conns = untracked(this.connections);
 
-      if (org && tkn && trigger > 0 && !untracked(this.isLoading)) {
-        void this.loadSummary(org, tkn);
+      if (trigger > 0 && trigger !== this.lastProcessedTrigger && conns.length > 0 && !loading) {
+        this.lastProcessedTrigger = trigger;
+        void this.loadSummary(conns);
       }
     });
   }
 
-  private async loadSummary(organization: string, token: string): Promise<void> {
+  private async loadSummary(connections: OrgConnection[]): Promise<void> {
     this.isLoading.set(true);
     try {
-      const summary = await this.summaryService.getSummary(organization, token);
+      const summary = await this.summaryService.getSummary(connections);
       this.summary.set(summary);
     } catch (error) {
       console.error('Failed to load workflow summary', error);
