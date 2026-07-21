@@ -10,10 +10,12 @@
   }
 
   <!-- Sidebar -->
-  <app-sidebar [groupCount]="prGroups().length" [mobileOpen]="sidebarOpen()">
+  <app-sidebar [groupCount]="visibleGroups().length" [mobileOpen]="sidebarOpen()">
     <app-org-switcher
       [connections]="connections()"
-      (connectionsChange)="onConnectionsChange($event)">
+      [selectedOrg]="selectedOrg()"
+      (connectionsChange)="onConnectionsChange($event)"
+      (selectedOrgChange)="onSelectedOrgChange($event)">
     </app-org-switcher>
   </app-sidebar>
 
@@ -37,18 +39,18 @@
           </button>
 
           <h1 class="text-sm font-semibold text-ink">Overview</h1>
-          @if (prGroups().length > 0) {
+          @if (visibleGroups().length > 0) {
             <span class="rounded-md bg-accent-subtle px-2.5 py-0.5 text-[11px] font-semibold text-accent tabular-nums">
-              {{ prGroups().length }} {{ prGroups().length === 1 ? 'group' : 'groups' }}
+              {{ visibleGroups().length }} {{ visibleGroups().length === 1 ? 'group' : 'groups' }}
             </span>
           }
         </div>
 
         <!-- Right: workflow summary + controls -->
         <div class="flex items-center gap-2 shrink-0">
-          @if (prGroups().length > 0) {
+          @if (visibleGroups().length > 0) {
             <app-workflow-summary
-              [connections]="connections()"
+              [connections]="visibleConnections()"
               [refreshTrigger]="workflowRefreshTrigger()">
             </app-workflow-summary>
           }
@@ -162,13 +164,13 @@
         }
 
         <!-- PR Groups -->
-        @if (prGroups().length > 0) {
+        @if (visibleGroups().length > 0) {
           <div class="flex items-center gap-2 mb-1">
             <h3 class="text-sm font-semibold text-ink">PR Groups</h3>
-            <span class="px-2 py-0.5 rounded-md bg-ghost border border-edge text-xs text-ink-2 font-mono">{{ prGroups().length }}</span>
+            <span class="px-2 py-0.5 rounded-md bg-ghost border border-edge text-xs text-ink-2 font-mono">{{ visibleGroups().length }}</span>
           </div>
           <div class="space-y-2">
-            @for (group of prGroups(); track group.title) {
+            @for (group of visibleGroups(); track group.title) {
               <app-pr-group
                 [group]="group"
                 (toggleGroup)="toggleGroup($event)"
@@ -183,13 +185,25 @@
           </div>
         }
 
-        <!-- Empty state -->
-        @if (searched() && prGroups().length === 0 && !error() && !isLoading()) {
+        <!-- Empty states -->
+        @if (searched() && !error() && !isLoading() && visibleGroups().length === 0) {
           <div class="text-center py-16 text-ink-3">
             <svg class="w-10 h-10 mx-auto mb-3 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
             </svg>
-            <p class="text-sm">No open Renovate PRs found for the configured organizations.</p>
+            @if (prGroups().length > 0 && selectedOrg()) {
+              <!-- PRs exist, just none for the active org filter -->
+              <p class="text-sm">No open Renovate PRs found for {{ selectedOrg() }}.</p>
+              <button
+                type="button"
+                (click)="onSelectedOrgChange(null)"
+                class="mt-3 px-3 py-1.5 text-xs font-medium rounded-md border border-edge text-ink-2 hover:bg-ghost transition-colors duration-200"
+              >
+                Show all organizations
+              </button>
+            } @else {
+              <p class="text-sm">No open Renovate PRs found for the configured organizations.</p>
+            }
           </div>
         }
 
