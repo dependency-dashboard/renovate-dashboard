@@ -6,6 +6,10 @@ import {
   PrGroupData,
   PullRequest,
   CiStatus,
+  connectionKey,
+  normalizeHost,
+  prConnectionKey,
+  DEFAULT_GITHUB_HOST,
 } from './models/pull-request.model';
 import { SidebarComponent } from './components/sidebar/sidebar.component';
 import { OrgSwitcherComponent } from './components/org-switcher/org-switcher.component';
@@ -33,8 +37,9 @@ export class App {
 
   // --- STATE SIGNALS ---
   connections = signal<OrgConnection[]>(this.loadConnections());
-  // The active org filter: null shows every configured organization.
-  selectedOrg = signal<string | null>(this.loadSelectedOrg());
+  // The active org filter, as a canonical connection key (see connectionKey);
+  // null shows every configured organization.
+  selectedOrgKey = signal<string | null>(this.loadSelectedOrgKey());
   darkMode = signal<boolean>(this.getInitialDarkMode());
   prGroups = signal<PrGroupData[]>([]);
   isLoading = signal<boolean>(false);
@@ -42,7 +47,8 @@ export class App {
   incompleteResults = signal<boolean>(false);
   searched = signal<boolean>(false);
   expandedGroupTitles = signal<Set<string>>(new Set());
-  expandedPrIds = signal<Set<number>>(new Set());
+  // Keyed by PullRequest.uid — numeric ids are only unique per instance.
+  expandedPrIds = signal<Set<string>>(new Set());
   sidebarOpen = signal<boolean>(false);
 
   // List controls (filter bar); filters narrow groups, they never hide PRs
@@ -64,10 +70,17 @@ export class App {
     this.connections().some(c => c.organization.trim().length > 0 && c.token.trim().length > 0),
   );
 
+  /** The connection matching the active org filter, if any. */
+  selectedConnection = computed(() => {
+    const key = this.selectedOrgKey();
+    if (!key) return undefined;
+    return this.connections().find(c => connectionKey(c) === key);
+  });
+
   subtitle = computed(() => {
-    const selected = this.selectedOrg();
+    const selected = this.selectedConnection();
     if (selected) {
-      return `Monitor and manage Renovate pull requests across the ${selected} organization`;
+      return `Monitor and manage Renovate pull requests across the ${selected.organization} organization`;
     }
     const conns = this.connections();
     if (conns.length === 1) {
@@ -81,9 +94,9 @@ export class App {
 
   /** Connections narrowed to the active org filter (all of them when unfiltered). */
   visibleConnections = computed(() => {
-    const selected = this.selectedOrg()?.toLowerCase();
-    if (!selected) return this.connections();
-    return this.connections().filter(c => c.organization.toLowerCase() === selected);
+    const key = this.selectedOrgKey();
+    if (!key) return this.connections();
+    return this.connections().filter(c => connectionKey(c) === key);
   });
 
   /**
@@ -92,12 +105,12 @@ export class App {
    * counts and statuses always match what is on screen.
    */
   visibleGroups = computed<PrGroup[]>(() => {
-    const selected = this.selectedOrg()?.toLowerCase();
+    const key = this.selectedOrgKey();
     const expanded = this.expandedGroupTitles();
     return this.prGroups()
       .map(group => {
-        const prs = selected
-          ? group.prs.filter(pr => pr.repoOwner.toLowerCase() === selected)
+        const prs = key
+          ? group.prs.filter(pr => prConnectionKey(pr) === key)
           : group.prs;
         return {
           title: group.title,
@@ -173,9 +186,9 @@ export class App {
     this.connections.set(sanitized);
     this.storage.setJson(SESSION_KEYS.connections, sanitized);
 
-    // Reset the org filter if the selected org was just removed.
-    const selected = this.selectedOrg()?.toLowerCase();
-    if (selected && !sanitized.some(c => c.organization.toLowerCase() === selected)) {
+    // Reset the org filter if the selected connection was just removed.
+    const key = this.selectedOrgKey();
+    if (key && !sanitized.some(c => connectionKey(c) === key)) {
       this.onSelectedOrgChange(null);
     }
 
@@ -193,19 +206,21 @@ export class App {
     }
   }
 
-  onSelectedOrgChange(org: string | null): void {
-    this.selectedOrg.set(org);
-    this.storage.set(SESSION_KEYS.selectedOrg, org ?? '');
+  onSelectedOrgChange(key: string | null): void {
+    this.selectedOrgKey.set(key);
+    this.storage.set(SESSION_KEYS.selectedOrg, key ?? '');
   }
 
-  private loadSelectedOrg(): string | null {
+  private loadSelectedOrgKey(): string | null {
     const stored = this.storage.get(SESSION_KEYS.selectedOrg).trim();
     if (!stored) return null;
-    // Only honor a persisted selection that still matches a configured org.
+    // Only honor a persisted selection that still matches a configured
+    // connection. Sessions from before multi-host support stored the bare org
+    // name, so accept that form too.
     const match = this.connections().find(
-      c => c.organization.toLowerCase() === stored.toLowerCase(),
+      c => connectionKey(c) === stored || c.organization.toLowerCase() === stored.toLowerCase(),
     );
-    return match ? match.organization : null;
+    return match ? connectionKey(match) : null;
   }
 
   private loadConnections(): OrgConnection[] {
@@ -223,7 +238,9 @@ export class App {
     const org = this.storage.get(SESSION_KEYS.organization).trim();
     const token = this.storage.get(SESSION_KEYS.token).trim();
     if (org && token) {
-      const migrated: OrgConnection[] = [{ organization: org, token }];
+      const migrated: OrgConnection[] = [
+        { platform: 'github', host: DEFAULT_GITHUB_HOST, organization: org, token },
+      ];
       this.storage.setJson(SESSION_KEYS.connections, migrated);
       // Drop the now-migrated legacy keys so they don't linger for the session.
       this.storage.remove(SESSION_KEYS.organization);
@@ -234,7 +251,12 @@ export class App {
     return [];
   }
 
-  /** Trim, drop entries missing an org or token, and de-duplicate by org (case-insensitive). */
+  /**
+   * Trim, drop entries missing an org or token or with an unparsable host,
+   * normalize platform/host (connections stored before multi-platform support
+   * have neither — they default to github.com), and de-duplicate by the
+   * canonical connection key.
+   */
   private sanitizeConnections(connections: OrgConnection[]): OrgConnection[] {
     const seen = new Set<string>();
     const result: OrgConnection[] = [];
@@ -244,12 +266,27 @@ export class App {
       }
       const organization = c.organization.trim();
       const token = c.token.trim();
-      const key = organization.toLowerCase();
-      if (!organization || !token || seen.has(key)) {
+      if (!organization || !token) {
+        continue;
+      }
+
+      const platform = c.platform === 'gitlab' ? 'gitlab' : 'github';
+      const host = normalizeHost(typeof c.host === 'string' ? c.host : '');
+      if (!host) {
+        continue;
+      }
+      const renovateAuthor =
+        typeof c.renovateAuthor === 'string' && c.renovateAuthor.trim() ? c.renovateAuthor.trim() : undefined;
+
+      const normalized: OrgConnection = renovateAuthor
+        ? { platform, host, organization, token, renovateAuthor }
+        : { platform, host, organization, token };
+      const key = connectionKey(normalized);
+      if (seen.has(key)) {
         continue;
       }
       seen.add(key);
-      result.push({ organization, token });
+      result.push(normalized);
     }
     return result;
   }
@@ -450,13 +487,13 @@ export class App {
 
   removePrFromGroup(prToRemove: PullRequest) {
     const updatedGroups = this.prGroups()
-      .map(group => ({ ...group, prs: group.prs.filter(p => p.id !== prToRemove.id) }))
+      .map(group => ({ ...group, prs: group.prs.filter(p => p.uid !== prToRemove.uid) }))
       .filter(group => group.prs.length > 0); // Remove group if it becomes empty
     this.prGroups.set(updatedGroups);
 
-    if (this.expandedPrIds().has(prToRemove.id)) {
+    if (this.expandedPrIds().has(prToRemove.uid)) {
       const updated = new Set(this.expandedPrIds());
-      updated.delete(prToRemove.id);
+      updated.delete(prToRemove.uid);
       this.expandedPrIds.set(updated);
     }
   }
@@ -472,7 +509,7 @@ export class App {
       expanded.delete(group.title);
       // Collapse the group's PR detail panels along with it.
       const prIds = new Set(this.expandedPrIds());
-      group.prs.forEach(pr => prIds.delete(pr.id));
+      group.prs.forEach(pr => prIds.delete(pr.uid));
       this.expandedPrIds.set(prIds);
     } else {
       expanded.add(group.title);
@@ -482,10 +519,10 @@ export class App {
 
   togglePullRequest(pr: PullRequest) {
     const updated = new Set(this.expandedPrIds());
-    if (updated.has(pr.id)) {
-      updated.delete(pr.id);
+    if (updated.has(pr.uid)) {
+      updated.delete(pr.uid);
     } else {
-      updated.add(pr.id);
+      updated.add(pr.uid);
     }
     this.expandedPrIds.set(updated);
   }

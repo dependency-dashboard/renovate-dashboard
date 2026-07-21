@@ -2,10 +2,10 @@ import { provideZonelessChangeDetection } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { OverlayContainer } from '@angular/cdk/overlay';
 import { OrgSwitcherComponent } from './org-switcher.component';
-import { OrgConnection } from '../../models/pull-request.model';
+import { connectionKey, DEFAULT_GITHUB_HOST, OrgConnection } from '../../models/pull-request.model';
 
-const ORG_A: OrgConnection = { organization: 'org-a', token: 'ghp_aaa' };
-const ORG_B: OrgConnection = { organization: 'org-b', token: 'ghp_bbb' };
+const ORG_A: OrgConnection = { platform: 'github', host: DEFAULT_GITHUB_HOST, organization: 'org-a', token: 'ghp_aaa' };
+const ORG_B: OrgConnection = { platform: 'github', host: DEFAULT_GITHUB_HOST, organization: 'org-b', token: 'ghp_bbb' };
 
 describe('OrgSwitcherComponent', () => {
   let overlayEl: HTMLElement;
@@ -54,7 +54,7 @@ describe('OrgSwitcherComponent', () => {
 
     it('shows the selected org when one is active', () => {
       const fixture = createFixture([ORG_A, ORG_B]);
-      fixture.componentRef.setInput('selectedOrg', 'org-b');
+      fixture.componentRef.setInput('selectedKey', connectionKey(ORG_B));
       fixture.detectChanges();
       expect(fixture.nativeElement.textContent).toContain('org-b');
     });
@@ -73,27 +73,27 @@ describe('OrgSwitcherComponent', () => {
       expect(overlayEl.textContent).not.toContain('All organizations');
     });
 
-    it('emits selectedOrgChange with the org and closes when an org is clicked', () => {
+    it('emits selectedKeyChange with the connection key and closes when an org is clicked', () => {
       const fixture = createFixture([ORG_A, ORG_B]);
       openPopover(fixture);
 
       const emitted: (string | null)[] = [];
-      fixture.componentInstance.selectedOrgChange.subscribe((v: string | null) => emitted.push(v));
+      fixture.componentInstance.selectedKeyChange.subscribe((v: string | null) => emitted.push(v));
 
       (overlayEl.querySelector('[aria-label="Show only org-b"]') as HTMLButtonElement).click();
       fixture.detectChanges();
 
-      expect(emitted).toEqual(['org-b']);
+      expect(emitted).toEqual([connectionKey(ORG_B)]);
       expect(fixture.componentInstance.open()).toBe(false);
     });
 
     it('emits null when "All organizations" is clicked', () => {
       const fixture = createFixture([ORG_A, ORG_B]);
-      fixture.componentRef.setInput('selectedOrg', 'org-a');
+      fixture.componentRef.setInput('selectedKey', connectionKey(ORG_A));
       openPopover(fixture);
 
       const emitted: (string | null)[] = [];
-      fixture.componentInstance.selectedOrgChange.subscribe((v: string | null) => emitted.push(v));
+      fixture.componentInstance.selectedKeyChange.subscribe((v: string | null) => emitted.push(v));
 
       const allBtn = Array.from(overlayEl.querySelectorAll('button')).find(
         b => b.textContent?.includes('All organizations')) as HTMLButtonElement;
@@ -104,7 +104,7 @@ describe('OrgSwitcherComponent', () => {
 
     it('marks the active org with aria-pressed', () => {
       const fixture = createFixture([ORG_A, ORG_B]);
-      fixture.componentRef.setInput('selectedOrg', 'org-a');
+      fixture.componentRef.setInput('selectedKey', connectionKey(ORG_A));
       openPopover(fixture);
 
       expect(overlayEl.querySelector('[aria-label="Show only org-a"]')?.getAttribute('aria-pressed')).toBe('true');
@@ -217,6 +217,55 @@ describe('OrgSwitcherComponent', () => {
       expect(fixture.componentInstance.open()).toBe(false);
       expect(fixture.componentInstance.draftOrg()).toBe('');
       expect(fixture.componentInstance.draftToken()).toBe('');
+    });
+
+    it('emits a normalized host and author from the advanced fields', () => {
+      const fixture = createFixture([]);
+      openPopover(fixture);
+      fixture.componentInstance.draftOrg.set('ghes-org');
+      fixture.componentInstance.draftToken.set('ghp_ghes');
+      fixture.componentInstance.draftHost.set('https://ghes.example.com/');
+      fixture.componentInstance.draftAuthor.set(' renovate-bot ');
+      fixture.detectChanges();
+
+      const emitted: OrgConnection[][] = [];
+      fixture.componentInstance.connectionsChange.subscribe((v: OrgConnection[]) => emitted.push(v));
+
+      (overlayEl.querySelector('form') as HTMLFormElement).dispatchEvent(new Event('submit'));
+
+      expect(emitted[0]).toEqual([{
+        platform: 'github',
+        host: 'https://ghes.example.com',
+        organization: 'ghes-org',
+        token: 'ghp_ghes',
+        renovateAuthor: 'renovate-bot',
+      }]);
+    });
+
+    it('rejects an unparsable server URL', () => {
+      const fixture = createFixture([]);
+      openPopover(fixture);
+      fixture.componentInstance.draftOrg.set('org');
+      fixture.componentInstance.draftToken.set('tok');
+      fixture.componentInstance.draftHost.set('not a url');
+      fixture.componentInstance.showAdvanced.set(true);
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.draftValid()).toBe(false);
+      expect(overlayEl.textContent).toContain('Enter a valid http(s) URL');
+    });
+
+    it('treats the same org on a different host as a new connection, not a duplicate', () => {
+      const fixture = createFixture([ORG_A]); // org-a on github.com
+      fixture.componentInstance.draftOrg.set('org-a');
+      fixture.componentInstance.draftToken.set('tok');
+
+      expect(fixture.componentInstance.isDuplicateOrg()).toBe(true);
+
+      fixture.componentInstance.draftHost.set('https://ghes.example.com');
+
+      expect(fixture.componentInstance.isDuplicateOrg()).toBe(false);
+      expect(fixture.componentInstance.draftValid()).toBe(true);
     });
 
     it('does not emit when the draft is invalid', () => {

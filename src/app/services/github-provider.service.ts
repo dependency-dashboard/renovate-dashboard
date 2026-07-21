@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import {
   CiStatus,
+  DEFAULT_GITHUB_HOST,
   GitHubCheckRunsResponse,
   GitHubCombinedStatusResponse,
   GitHubIssueSearchItem,
@@ -12,12 +13,24 @@ import {
 } from '../models/pull-request.model';
 import { GitProvider, ProviderSearchResult } from './git-provider';
 
-/** GitProvider implementation for github.com via the REST v3 API. */
+const DEFAULT_RENOVATE_AUTHOR = 'app/renovate';
+
+/**
+ * REST API root for a GitHub host: github.com uses the dedicated api
+ * subdomain; GitHub Enterprise Server serves the identical API under
+ * /api/v3 on the instance host.
+ */
+export function githubApiBase(host: string): string {
+  return host === DEFAULT_GITHUB_HOST ? 'https://api.github.com' : `${host}/api/v3`;
+}
+
+/** GitProvider implementation for github.com and GitHub Enterprise Server (REST v3 API). */
 @Injectable({ providedIn: 'root' })
 export class GitHubProviderService implements GitProvider {
   async searchRenovatePrs(connection: OrgConnection): Promise<ProviderSearchResult> {
-    const query = `is:pr author:app/renovate org:${connection.organization} is:open`;
-    const { items, incompleteResults } = await this.fetchAllSearchItems(query, connection.token);
+    const author = connection.renovateAuthor?.trim() || DEFAULT_RENOVATE_AUTHOR;
+    const query = `is:pr author:${author} org:${connection.organization} is:open`;
+    const { items, incompleteResults } = await this.fetchAllSearchItems(connection.host, query, connection.token);
 
     const prs: PullRequest[] = [];
     for (const item of items) {
@@ -30,6 +43,9 @@ export class GitHubProviderService implements GitProvider {
 
       prs.push({
         id: item.id,
+        uid: `${connection.platform}|${connection.host}|${item.id}`,
+        platform: connection.platform,
+        host: connection.host,
         number: item.number,
         title: item.title,
         html_url: item.html_url,
@@ -54,28 +70,29 @@ export class GitHubProviderService implements GitProvider {
   }
 
   async fetchPrDetails(pr: PullRequest): Promise<void> {
+    const apiBase = githubApiBase(pr.host);
     try {
       // Get full PR data (for commit count and head SHA)
-      const prUrl = `https://api.github.com/repos/${pr.repoOwner}/${pr.repoName}/pulls/${pr.number}`;
+      const prUrl = `${apiBase}/repos/${pr.repoOwner}/${pr.repoName}/pulls/${pr.number}`;
       const prData = await this.apiRequest<GitHubPullRequestDetails>(prUrl, pr.orgToken);
       pr.isModified = prData.commits > 1;
       pr.head.sha = prData.head.sha;
       pr.commits = prData.commits;
 
       // Get repository settings to determine allowed merge methods
-      const repoUrl = `https://api.github.com/repos/${pr.repoOwner}/${pr.repoName}`;
+      const repoUrl = `${apiBase}/repos/${pr.repoOwner}/${pr.repoName}`;
       const repoData = await this.apiRequest<GitHubRepository>(repoUrl, pr.orgToken);
       pr.allowSquashMerge = repoData.allow_squash_merge;
       pr.allowMergeCommit = repoData.allow_merge_commit;
       pr.allowRebaseMerge = repoData.allow_rebase_merge;
 
       // Get combined CI status for the PR's head commit (as a fallback)
-      const statusUrl = `https://api.github.com/repos/${pr.repoOwner}/${pr.repoName}/commits/${pr.head.sha}/status`;
+      const statusUrl = `${apiBase}/repos/${pr.repoOwner}/${pr.repoName}/commits/${pr.head.sha}/status`;
       const statusData = await this.apiRequest<GitHubCombinedStatusResponse>(statusUrl, pr.orgToken);
       pr.ciStatus = this.mapCombinedStatus(statusData.state);
 
       // Get individual check runs for more detailed status
-      const checksUrl = `https://api.github.com/repos/${pr.repoOwner}/${pr.repoName}/commits/${pr.head.sha}/check-runs`;
+      const checksUrl = `${apiBase}/repos/${pr.repoOwner}/${pr.repoName}/commits/${pr.head.sha}/check-runs`;
       const checksData = await this.apiRequest<GitHubCheckRunsResponse>(checksUrl, pr.orgToken);
       if (checksData && checksData.check_runs) {
         pr.checkRuns = checksData.check_runs.map(cr => ({
@@ -115,24 +132,25 @@ export class GitHubProviderService implements GitProvider {
   }
 
   async approveAndMerge(pr: PullRequest): Promise<void> {
+    const apiBase = githubApiBase(pr.host);
     // Step 1: Approve
-    const reviewUrl = `https://api.github.com/repos/${pr.repoOwner}/${pr.repoName}/pulls/${pr.number}/reviews`;
+    const reviewUrl = `${apiBase}/repos/${pr.repoOwner}/${pr.repoName}/pulls/${pr.number}/reviews`;
     await this.apiRequest<void>(reviewUrl, pr.orgToken, 'POST', { event: 'APPROVE' });
 
     // Step 2: Merge with a method appropriate for the PR and repo settings
     const mergeMethod = this.determineMergeMethod(pr);
-    const mergeUrl = `https://api.github.com/repos/${pr.repoOwner}/${pr.repoName}/pulls/${pr.number}/merge`;
+    const mergeUrl = `${apiBase}/repos/${pr.repoOwner}/${pr.repoName}/pulls/${pr.number}/merge`;
     await this.apiRequest<void>(mergeUrl, pr.orgToken, 'PUT', { merge_method: mergeMethod });
   }
 
   async close(pr: PullRequest): Promise<void> {
-    const url = `https://api.github.com/repos/${pr.repoOwner}/${pr.repoName}/pulls/${pr.number}`;
+    const url = `${githubApiBase(pr.host)}/repos/${pr.repoOwner}/${pr.repoName}/pulls/${pr.number}`;
     await this.apiRequest<void>(url, pr.orgToken, 'PATCH', { state: 'closed' });
   }
 
   // --- INTERNALS ---
 
-  private async fetchAllSearchItems(query: string, token: string): Promise<{ items: GitHubIssueSearchItem[]; incompleteResults: boolean }> {
+  private async fetchAllSearchItems(host: string, query: string, token: string): Promise<{ items: GitHubIssueSearchItem[]; incompleteResults: boolean }> {
     const headers = {
       'Accept': 'application/vnd.github.v3+json',
       'Authorization': `token ${token}`
@@ -142,7 +160,7 @@ export class GitHubProviderService implements GitProvider {
 
     for (let page = 1; page <= 10; page++) {
       const params = new URLSearchParams({ q: query, per_page: '100', page: String(page) });
-      const url = `https://api.github.com/search/issues?${params.toString()}`;
+      const url = `${githubApiBase(host)}/search/issues?${params.toString()}`;
       const response = await fetch(url, { headers });
       if (!response.ok) {
         let errorMessage = response.statusText

@@ -3,13 +3,26 @@ import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
 import { App } from './app';
 import { getSourceRepositoryUrl } from './config/source-repository-url';
-import { PullRequest, PrGroup } from './models/pull-request.model';
+import { PullRequest, PrGroup, OrgConnection, DEFAULT_GITHUB_HOST, connectionKey } from './models/pull-request.model';
 import { SessionStorageService } from './services/session-storage.service';
 import { GitHubProviderService } from './services/github-provider.service';
 
+function conn(organization: string, token: string): OrgConnection {
+  return { platform: 'github', host: DEFAULT_GITHUB_HOST, organization, token };
+}
+
+/** Canonical connection key for a default-host GitHub org. */
+function orgKey(organization: string): string {
+  return connectionKey({ platform: 'github', host: DEFAULT_GITHUB_HOST, organization });
+}
+
 function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
+  const id = overrides.id ?? 1;
   return {
-    id: 1,
+    id,
+    uid: `github|https://github.com|${id}`,
+    platform: 'github',
+    host: 'https://github.com',
     number: 1,
     title: 'Update dependency foo to v2',
     html_url: 'https://github.com/org/repo/pull/1',
@@ -139,28 +152,28 @@ describe('App', () => {
 
     it('is true when at least one connection is configured', () => {
       const app = TestBed.createComponent(App).componentInstance;
-      app.connections.set([{ organization: 'my-org', token: 'ghp_token' }]);
+      app.connections.set([conn('my-org', 'ghp_token')]);
       expect(app.formValid()).toBe(true);
     });
 
     it('is true when multiple connections are configured', () => {
       const app = TestBed.createComponent(App).componentInstance;
       app.connections.set([
-        { organization: 'org-a', token: 'ghp_aaa' },
-        { organization: 'org-b', token: 'ghp_bbb' },
+        conn('org-a', 'ghp_aaa'),
+        conn('org-b', 'ghp_bbb'),
       ]);
       expect(app.formValid()).toBe(true);
     });
 
     it('is false when the only connection has an empty token', () => {
       const app = TestBed.createComponent(App).componentInstance;
-      app.connections.set([{ organization: 'my-org', token: '' }]);
+      app.connections.set([conn('my-org', '')]);
       expect(app.formValid()).toBe(false);
     });
 
     it('is false when the only connection has a whitespace-only org', () => {
       const app = TestBed.createComponent(App).componentInstance;
-      app.connections.set([{ organization: '   ', token: 'ghp_token' }]);
+      app.connections.set([conn('   ', 'ghp_token')]);
       expect(app.formValid()).toBe(false);
     });
   });
@@ -243,11 +256,11 @@ describe('App', () => {
       const app = TestBed.createComponent(App).componentInstance;
       const pr = makePr({ id: 42 });
       app.prGroups.set([makeGroup({ prs: [pr] })]);
-      app.expandedPrIds.set(new Set([42]));
+      app.expandedPrIds.set(new Set([pr.uid]));
 
       app.removePrFromGroup(pr);
 
-      expect(app.expandedPrIds().has(42)).toBe(false);
+      expect(app.expandedPrIds().has(pr.uid)).toBe(false);
     });
   });
 
@@ -269,28 +282,30 @@ describe('App', () => {
       const group = makeGroup({ prs: [pr] });
       app.prGroups.set([group]);
       app.expandedGroupTitles.set(new Set([group.title]));
-      app.expandedPrIds.set(new Set([7]));
+      app.expandedPrIds.set(new Set([pr.uid]));
 
       app.toggleGroup(group);
 
       expect(app.expandedGroupTitles().has(group.title)).toBe(false);
       expect(app.visibleGroups()[0].isExpanded).toBe(false);
-      expect(app.expandedPrIds().has(7)).toBe(false);
+      expect(app.expandedPrIds().has(pr.uid)).toBe(false);
     });
   });
 
   describe('togglePullRequest', () => {
-    it('adds the PR id to expandedPrIds when not present', () => {
+    it('adds the PR uid to expandedPrIds when not present', () => {
       const app = TestBed.createComponent(App).componentInstance;
-      app.togglePullRequest(makePr({ id: 5 }));
-      expect(app.expandedPrIds().has(5)).toBe(true);
+      const pr = makePr({ id: 5 });
+      app.togglePullRequest(pr);
+      expect(app.expandedPrIds().has(pr.uid)).toBe(true);
     });
 
-    it('removes the PR id from expandedPrIds when already present', () => {
+    it('removes the PR uid from expandedPrIds when already present', () => {
       const app = TestBed.createComponent(App).componentInstance;
-      app.expandedPrIds.set(new Set([5]));
-      app.togglePullRequest(makePr({ id: 5 }));
-      expect(app.expandedPrIds().has(5)).toBe(false);
+      const pr = makePr({ id: 5 });
+      app.expandedPrIds.set(new Set([pr.uid]));
+      app.togglePullRequest(pr);
+      expect(app.expandedPrIds().has(pr.uid)).toBe(false);
     });
   });
 
@@ -337,7 +352,7 @@ describe('App', () => {
   describe('search incomplete results (through the real provider)', () => {
     it('surfaces incompleteResults warning signal after searchAndProcessPullRequests', async () => {
       const app = TestBed.createComponent(App).componentInstance;
-      app.connections.set([{ organization: 'my-org', token: 'ghp_test' }]);
+      app.connections.set([conn('my-org', 'ghp_test')]);
 
       vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
         new Response(JSON.stringify({ total_count: 1, incomplete_results: true, items: [] }), { status: 200 })
@@ -360,8 +375,8 @@ describe('App', () => {
 
       const app = TestBed.createComponent(App).componentInstance;
       app.connections.set([
-        { organization: 'org-a', token: 'a' },
-        { organization: 'org-b', token: 'b' },
+        conn('org-a', 'a'),
+        conn('org-b', 'b'),
       ]);
 
       await app.searchAndProcessPullRequests();
@@ -377,7 +392,7 @@ describe('App', () => {
       TestBed.overrideProvider(GitHubProviderService, { useValue: provider });
 
       const app = TestBed.createComponent(App).componentInstance;
-      app.connections.set([{ organization: 'org-a', token: 'a' }]);
+      app.connections.set([conn('org-a', 'a')]);
 
       await app.searchAndProcessPullRequests();
 
@@ -393,14 +408,14 @@ describe('App', () => {
       const app = TestBed.createComponent(App).componentInstance;
       // A malformed entry (empty token) slips into the signal directly.
       app.connections.set([
-        { organization: 'good-org', token: 'ghp_good' },
-        { organization: 'bad-org', token: '' },
+        conn('good-org', 'ghp_good'),
+        conn('bad-org', ''),
       ]);
 
       await app.searchAndProcessPullRequests();
 
       expect(provider.searchRenovatePrs).toHaveBeenCalledTimes(1);
-      expect(provider.searchRenovatePrs).toHaveBeenCalledWith({ organization: 'good-org', token: 'ghp_good' });
+      expect(provider.searchRenovatePrs).toHaveBeenCalledWith(conn('good-org', 'ghp_good'));
     });
   });
 
@@ -476,7 +491,7 @@ describe('App', () => {
   describe('layout chrome', () => {
     it('shows the org name in the sidebar switcher for a single connection', () => {
       const fixture = TestBed.createComponent(App);
-      fixture.componentInstance.connections.set([{ organization: 'my-org', token: 'ghp_test' }]);
+      fixture.componentInstance.connections.set([conn('my-org', 'ghp_test')]);
       fixture.detectChanges();
       expect(fixture.nativeElement.textContent).toContain('my-org');
       expect(fixture.nativeElement.textContent).toContain('github.com');
@@ -485,8 +500,8 @@ describe('App', () => {
     it('shows "All organizations" in the sidebar switcher for multiple connections', () => {
       const fixture = TestBed.createComponent(App);
       fixture.componentInstance.connections.set([
-        { organization: 'org-a', token: 'ghp_aaa' },
-        { organization: 'org-b', token: 'ghp_bbb' },
+        conn('org-a', 'ghp_aaa'),
+        conn('org-b', 'ghp_bbb'),
       ]);
       fixture.detectChanges();
       expect(fixture.nativeElement.textContent).toContain('All organizations');
@@ -518,12 +533,12 @@ describe('App', () => {
 
     it('updates the subtitle with the configured org', () => {
       const app = TestBed.createComponent(App).componentInstance;
-      app.connections.set([{ organization: 'my-org', token: 'ghp_test' }]);
+      app.connections.set([conn('my-org', 'ghp_test')]);
       expect(app.subtitle()).toContain('the my-org organization');
 
       app.connections.set([
-        { organization: 'org-a', token: 'a' },
-        { organization: 'org-b', token: 'b' },
+        conn('org-a', 'a'),
+        conn('org-b', 'b'),
       ]);
       expect(app.subtitle()).toContain('2 GitHub organizations');
     });
@@ -539,7 +554,7 @@ describe('App', () => {
       TestBed.createComponent(App);
 
       expect(search.searchRenovatePrs).toHaveBeenCalledWith(
-        { organization: 'saved-org', token: 'ghp_saved' });
+        conn('saved-org', 'ghp_saved'));
     });
 
     it('does not search on startup when no connections are stored', () => {
@@ -556,10 +571,10 @@ describe('App', () => {
       TestBed.overrideProvider(SessionStorageService, { useValue: makeStorageSpy() });
 
       const app = TestBed.createComponent(App).componentInstance;
-      app.onConnectionsChange([{ organization: 'new-org', token: 'ghp_new' }]);
+      app.onConnectionsChange([conn('new-org', 'ghp_new')]);
 
       expect(search.searchRenovatePrs).toHaveBeenCalledWith(
-        { organization: 'new-org', token: 'ghp_new' });
+        conn('new-org', 'ghp_new'));
     });
 
     it('clears results and ignores the in-flight search when the last org is removed', async () => {
@@ -599,7 +614,7 @@ describe('App', () => {
       TestBed.overrideProvider(GitHubProviderService, { useValue: provider });
 
       const app = TestBed.createComponent(App).componentInstance;
-      app.connections.set([{ organization: 'my-org', token: 'ghp_test' }]);
+      app.connections.set([conn('my-org', 'ghp_test')]);
 
       const first = app.searchAndProcessPullRequests();
       const second = app.searchAndProcessPullRequests();
@@ -617,8 +632,8 @@ describe('App', () => {
   describe('per-org views', () => {
     function seedTwoOrgGroups(app: App) {
       app.connections.set([
-        { organization: 'org-a', token: 'a' },
-        { organization: 'org-b', token: 'b' },
+        conn('org-a', 'a'),
+        conn('org-b', 'b'),
       ]);
       app.prGroups.set([
         makeGroup({
@@ -648,7 +663,7 @@ describe('App', () => {
       const app = TestBed.createComponent(App).componentInstance;
       seedTwoOrgGroups(app);
 
-      app.selectedOrg.set('org-a');
+      app.selectedOrgKey.set(orgKey('org-a'));
 
       const groups = app.visibleGroups();
       expect(groups).toHaveLength(1);
@@ -660,7 +675,7 @@ describe('App', () => {
       const app = TestBed.createComponent(App).componentInstance;
       seedTwoOrgGroups(app);
 
-      app.selectedOrg.set('ORG-A');
+      app.selectedOrgKey.set(orgKey('ORG-A'));
 
       expect(app.visibleGroups()).toHaveLength(1);
     });
@@ -673,7 +688,7 @@ describe('App', () => {
       expect(app.visibleGroups()[0].aggregateCiStatus).toBe('failure');
       expect(app.visibleGroups()[0].workflowSummary).toEqual({ success: 1, pending: 0, failed: 1 });
 
-      app.selectedOrg.set('org-a');
+      app.selectedOrgKey.set(orgKey('org-a'));
 
       expect(app.visibleGroups()[0].aggregateCiStatus).toBe('success');
       expect(app.visibleGroups()[0].workflowSummary).toEqual({ success: 1, pending: 0, failed: 0 });
@@ -685,18 +700,42 @@ describe('App', () => {
 
       expect(app.visibleConnections()).toHaveLength(2);
 
-      app.selectedOrg.set('org-b');
+      app.selectedOrgKey.set(orgKey('org-b'));
 
-      expect(app.visibleConnections()).toEqual([{ organization: 'org-b', token: 'b' }]);
+      expect(app.visibleConnections()).toEqual([conn('org-b', 'b')]);
     });
 
     it('names the selected org in the subtitle', () => {
       const app = TestBed.createComponent(App).componentInstance;
       seedTwoOrgGroups(app);
 
-      app.selectedOrg.set('org-a');
+      app.selectedOrgKey.set(orgKey('org-a'));
 
       expect(app.subtitle()).toContain('the org-a organization');
+    });
+
+    it('distinguishes same-named orgs on different hosts', () => {
+      const app = TestBed.createComponent(App).componentInstance;
+      const ghesHost = 'https://ghes.example.com';
+      app.connections.set([
+        conn('my-org', 'a'),
+        { ...conn('my-org', 'b'), host: ghesHost },
+      ]);
+      app.prGroups.set([
+        makeGroup({
+          prs: [
+            makePr({ id: 1, repoOwner: 'my-org' }), // github.com (makePr default)
+            makePr({ id: 2, repoOwner: 'my-org', host: ghesHost, uid: `github|${ghesHost}|2` }),
+          ],
+        }),
+      ]);
+
+      app.selectedOrgKey.set(connectionKey({ platform: 'github', host: ghesHost, organization: 'my-org' }));
+
+      const groups = app.visibleGroups();
+      expect(groups).toHaveLength(1);
+      expect(groups[0].prs.map(pr => pr.id)).toEqual([2]);
+      expect(app.visibleConnections()).toEqual([{ ...conn('my-org', 'b'), host: ghesHost }]);
     });
 
     it('onSelectedOrgChange persists the selection', () => {
@@ -705,9 +744,9 @@ describe('App', () => {
 
       const app = TestBed.createComponent(App).componentInstance;
 
-      app.onSelectedOrgChange('org-a');
-      expect(app.selectedOrg()).toBe('org-a');
-      expect(storageSpy.set).toHaveBeenCalledWith('selectedOrg', 'org-a');
+      app.onSelectedOrgChange(orgKey('org-a'));
+      expect(app.selectedOrgKey()).toBe(orgKey('org-a'));
+      expect(storageSpy.set).toHaveBeenCalledWith('selectedOrg', orgKey('org-a'));
 
       app.onSelectedOrgChange(null);
       expect(storageSpy.set).toHaveBeenCalledWith('selectedOrg', '');
@@ -716,24 +755,24 @@ describe('App', () => {
     it('restores a persisted selection that matches a configured org', () => {
       stubSearchService();
       const storageSpy = makeStorageSpy(
-        [{ organization: 'Org-A', token: 'a' }], '', '', 'org-a');
+        [conn('Org-A', 'a')], '', '', 'org-a');
       TestBed.overrideProvider(SessionStorageService, { useValue: storageSpy });
 
       const app = TestBed.createComponent(App).componentInstance;
 
       // Restored with the connection's canonical casing.
-      expect(app.selectedOrg()).toBe('Org-A');
+      expect(app.selectedOrgKey()).toBe(orgKey('Org-A'));
     });
 
     it('ignores a persisted selection that no longer matches any connection', () => {
       stubSearchService();
       const storageSpy = makeStorageSpy(
-        [{ organization: 'org-a', token: 'a' }], '', '', 'gone-org');
+        [conn('org-a', 'a')], '', '', 'gone-org');
       TestBed.overrideProvider(SessionStorageService, { useValue: storageSpy });
 
       const app = TestBed.createComponent(App).componentInstance;
 
-      expect(app.selectedOrg()).toBeNull();
+      expect(app.selectedOrgKey()).toBeNull();
     });
 
     it('resets the selection when the selected org is removed', () => {
@@ -743,28 +782,28 @@ describe('App', () => {
 
       const app = TestBed.createComponent(App).componentInstance;
       app.onConnectionsChange([
-        { organization: 'org-a', token: 'a' },
-        { organization: 'org-b', token: 'b' },
+        conn('org-a', 'a'),
+        conn('org-b', 'b'),
       ]);
-      app.onSelectedOrgChange('org-b');
+      app.onSelectedOrgChange(orgKey('org-b'));
 
-      app.onConnectionsChange([{ organization: 'org-a', token: 'a' }]);
+      app.onConnectionsChange([conn('org-a', 'a')]);
 
-      expect(app.selectedOrg()).toBeNull();
+      expect(app.selectedOrgKey()).toBeNull();
     });
 
     it('keeps the selection when an unrelated org is removed', () => {
       stubSearchService();
       const app = TestBed.createComponent(App).componentInstance;
       app.onConnectionsChange([
-        { organization: 'org-a', token: 'a' },
-        { organization: 'org-b', token: 'b' },
+        conn('org-a', 'a'),
+        conn('org-b', 'b'),
       ]);
-      app.onSelectedOrgChange('org-a');
+      app.onSelectedOrgChange(orgKey('org-a'));
 
-      app.onConnectionsChange([{ organization: 'org-a', token: 'a' }]);
+      app.onConnectionsChange([conn('org-a', 'a')]);
 
-      expect(app.selectedOrg()).toBe('org-a');
+      expect(app.selectedOrgKey()).toBe(orgKey('org-a'));
     });
   });
 
@@ -859,7 +898,7 @@ describe('App', () => {
         }),
       ]);
 
-      app.selectedOrg.set('org-b');
+      app.selectedOrgKey.set(orgKey('org-b'));
       app.statusFilter.set('failure');
 
       const groups = app.filteredGroups();
@@ -905,7 +944,7 @@ describe('App', () => {
 
       expect(app.readyToMergePrs()).toHaveLength(2);
 
-      app.selectedOrg.set('org-a');
+      app.selectedOrgKey.set(orgKey('org-a'));
 
       expect(app.readyToMergePrs()).toHaveLength(1);
       expect(app.readyToMergePrs()[0].id).toBe(1);
@@ -915,7 +954,7 @@ describe('App', () => {
   describe('sessionStorage persistence', () => {
     it('restores connections from session storage on init', () => {
       stubSearchService();
-      const saved = [{ organization: 'saved-org', token: 'saved-token' }];
+      const saved = [conn('saved-org', 'saved-token')];
       const storageSpy = makeStorageSpy(saved);
       TestBed.overrideProvider(SessionStorageService, { useValue: storageSpy });
 
@@ -931,8 +970,8 @@ describe('App', () => {
 
       const app = TestBed.createComponent(App).componentInstance;
 
-      expect(app.connections()).toEqual([{ organization: 'legacy-org', token: 'legacy-token' }]);
-      expect(storageSpy.setJson).toHaveBeenCalledWith('connections', [{ organization: 'legacy-org', token: 'legacy-token' }]);
+      expect(app.connections()).toEqual([conn('legacy-org', 'legacy-token')]);
+      expect(storageSpy.setJson).toHaveBeenCalledWith('connections', [conn('legacy-org', 'legacy-token')]);
     });
 
     it('clears the legacy organization/token keys after migrating', () => {
@@ -952,7 +991,7 @@ describe('App', () => {
       TestBed.overrideProvider(SessionStorageService, { useValue: storageSpy });
 
       const app = TestBed.createComponent(App).componentInstance;
-      const newConnections = [{ organization: 'my-org', token: 'ghp_test' }];
+      const newConnections = [conn('my-org', 'ghp_test')];
       app.onConnectionsChange(newConnections);
 
       expect(storageSpy.setJson).toHaveBeenCalledWith('connections', newConnections);
@@ -979,11 +1018,48 @@ describe('App', () => {
       expect(storageSpy.setJson).not.toHaveBeenCalled();
     });
 
+    it('defaults platform and host for connections stored before multi-platform support', () => {
+      stubSearchService();
+      // Old shape: no platform, host, or renovateAuthor.
+      const storageSpy = makeStorageSpy([{ organization: 'old-org', token: 'old-token' }]);
+      TestBed.overrideProvider(SessionStorageService, { useValue: storageSpy });
+
+      const app = TestBed.createComponent(App).componentInstance;
+
+      expect(app.connections()).toEqual([conn('old-org', 'old-token')]);
+    });
+
+    it('allows the same org name on different hosts', () => {
+      stubSearchService();
+      const ghes = { ...conn('my-org', 't2'), host: 'https://ghes.example.com' };
+      const storageSpy = makeStorageSpy([conn('my-org', 't1'), ghes]);
+      TestBed.overrideProvider(SessionStorageService, { useValue: storageSpy });
+
+      const app = TestBed.createComponent(App).componentInstance;
+
+      expect(app.connections()).toHaveLength(2);
+    });
+
+    it('normalizes hosts and drops entries with unparsable ones', () => {
+      stubSearchService();
+      const storageSpy = makeStorageSpy([
+        { ...conn('org-a', 't1'), host: 'https://ghes.example.com/' }, // trailing slash
+        { ...conn('org-b', 't2'), host: 'not a url' },
+      ]);
+      TestBed.overrideProvider(SessionStorageService, { useValue: storageSpy });
+
+      const app = TestBed.createComponent(App).componentInstance;
+
+      expect(app.connections()).toEqual([
+        { ...conn('org-a', 't1'), host: 'https://ghes.example.com' },
+      ]);
+    });
+
     it('sanitizes stored connections: trims, drops invalid entries, and de-duplicates by org', () => {
       stubSearchService();
       const storageSpy = makeStorageSpy([
         { organization: '  org-a  ', token: '  t1  ' },
-        { organization: 'ORG-A', token: 't2' }, // case-insensitive duplicate
+        conn('ORG-A', 't2'), // case-insensitive duplicate
         { organization: '', token: 'no-org' },   // invalid: empty org
         { organization: 'org-b', token: '' },     // invalid: empty token
       ]);
@@ -991,7 +1067,7 @@ describe('App', () => {
 
       const app = TestBed.createComponent(App).componentInstance;
 
-      expect(app.connections()).toEqual([{ organization: 'org-a', token: 't1' }]);
+      expect(app.connections()).toEqual([conn('org-a', 't1')]);
     });
 
     it('sanitizes connections passed to onConnectionsChange before storing', () => {
@@ -1001,12 +1077,12 @@ describe('App', () => {
 
       const app = TestBed.createComponent(App).componentInstance;
       app.onConnectionsChange([
-        { organization: ' my-org ', token: ' ghp_test ' },
-        { organization: 'my-org', token: 'dupe' },
+        conn(' my-org ', ' ghp_test '),
+        conn('my-org', 'dupe'),
       ]);
 
-      expect(app.connections()).toEqual([{ organization: 'my-org', token: 'ghp_test' }]);
-      expect(storageSpy.setJson).toHaveBeenCalledWith('connections', [{ organization: 'my-org', token: 'ghp_test' }]);
+      expect(app.connections()).toEqual([conn('my-org', 'ghp_test')]);
+      expect(storageSpy.setJson).toHaveBeenCalledWith('connections', [conn('my-org', 'ghp_test')]);
     });
   });
 });
