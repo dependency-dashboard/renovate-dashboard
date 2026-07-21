@@ -15,14 +15,14 @@ import {
 import { SidebarComponent } from './components/sidebar/sidebar.component';
 import { OrgSwitcherComponent } from './components/org-switcher/org-switcher.component';
 import { PrGroupComponent } from './components/pr-group/pr-group.component';
-import { WorkflowSummaryComponent } from './workflow-summary.component';
+import { OverviewPanelComponent } from './components/overview-panel/overview-panel.component';
 import { getSourceRepositoryUrl } from './config/source-repository-url';
 import { SessionStorageService, SESSION_KEYS } from './services/session-storage.service';
 import { GitHubSearchService } from './services/github-search.service';
 
 @Component({
   selector: 'app-root',
-  imports: [SidebarComponent, OrgSwitcherComponent, PrGroupComponent, WorkflowSummaryComponent],
+  imports: [SidebarComponent, OrgSwitcherComponent, PrGroupComponent, OverviewPanelComponent],
   templateUrl: './app.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -42,7 +42,6 @@ export class App {
   error = signal<string | null>(null);
   incompleteResults = signal<boolean>(false);
   searched = signal<boolean>(false);
-  workflowRefreshTrigger = signal<number>(0);
   expandedGroupTitles = signal<Set<string>>(new Set());
   expandedPrIds = signal<Set<number>>(new Set());
   sidebarOpen = signal<boolean>(false);
@@ -153,8 +152,6 @@ export class App {
   onSelectedOrgChange(org: string | null): void {
     this.selectedOrg.set(org);
     this.storage.set(SESSION_KEYS.selectedOrg, org ?? '');
-    // Rescope the top-bar workflow summary to the newly visible connections.
-    this.bumpWorkflowSummaryRefresh();
   }
 
   private loadSelectedOrg(): string | null {
@@ -359,9 +356,6 @@ export class App {
       this.expandedGroupTitles.set(new Set());
       this.expandedPrIds.set(new Set());
 
-      // Trigger workflow summary refresh
-      this.bumpWorkflowSummaryRefresh();
-
     } catch (e: unknown) {
       if (generation !== this.searchGeneration) return;
       const message = e instanceof Error ? e.message : 'An unknown error occurred.';
@@ -438,16 +432,13 @@ export class App {
     }
   }
 
-  async closePullRequest(prToUpdate: PullRequest, refreshSummary = true) {
+  async closePullRequest(prToUpdate: PullRequest) {
     this.setPrProcessingState(prToUpdate, true);
     try {
       const url = `https://api.github.com/repos/${prToUpdate.repoOwner}/${prToUpdate.repoName}/pulls/${prToUpdate.number}`;
       await this.apiRequest<void>(url, prToUpdate.orgToken, 'PATCH', { state: 'closed' });
       // Remove PR from UI
       this.removePrFromGroup(prToUpdate);
-      if (refreshSummary) {
-        this.bumpWorkflowSummaryRefresh();
-      }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       this.error.set(`Failed to close PR #${prToUpdate.number}: ${message}`);
@@ -455,7 +446,7 @@ export class App {
     }
   }
 
-  async approveAndMergePullRequest(prToUpdate: PullRequest, refreshSummary = true) {
+  async approveAndMergePullRequest(prToUpdate: PullRequest) {
     this.setPrProcessingState(prToUpdate, true);
     try {
       // Check if any workflow jobs are failing
@@ -476,9 +467,6 @@ export class App {
 
       // Remove PR from UI
       this.removePrFromGroup(prToUpdate);
-      if (refreshSummary) {
-        this.bumpWorkflowSummaryRefresh();
-      }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       this.error.set(`Failed to merge PR #${prToUpdate.number}: ${message}`);
@@ -493,10 +481,8 @@ export class App {
     }
 
     for (const pr of prsSnapshot) {
-      await this.closePullRequest(pr, false);
+      await this.closePullRequest(pr);
     }
-
-    this.bumpWorkflowSummaryRefresh();
   }
 
   async approveAndMergeGroupPullRequests(group: PrGroup) {
@@ -514,10 +500,8 @@ export class App {
     }
 
     for (const pr of prsToMerge) {
-      await this.approveAndMergePullRequest(pr, false);
+      await this.approveAndMergePullRequest(pr);
     }
-
-    this.bumpWorkflowSummaryRefresh();
   }
 
   // --- HELPER & UTILITY METHODS ---
@@ -660,9 +644,5 @@ export class App {
 
     // If none of those work, throw an error
     throw new Error(`No suitable merge method available for PR #${pr.number}`);
-  }
-
-  private bumpWorkflowSummaryRefresh(): void {
-    this.workflowRefreshTrigger.set(this.workflowRefreshTrigger() + 1);
   }
 }
