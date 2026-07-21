@@ -5,12 +5,7 @@ import { App } from './app';
 import { getSourceRepositoryUrl } from './config/source-repository-url';
 import { PullRequest, PrGroup } from './models/pull-request.model';
 import { SessionStorageService } from './services/session-storage.service';
-import { GitHubSearchService } from './services/github-search.service';
-
-interface AppPrivate {
-  determineMergeMethod(pr: PullRequest): string;
-  apiRequest<T>(url: string, token: string, method?: string, body?: object): Promise<T>;
-}
+import { GitHubProviderService } from './services/github-provider.service';
 
 function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
   return {
@@ -94,13 +89,13 @@ describe('App', () => {
     };
   }
 
-  /** Stub the search service so constructor auto-search resolves harmlessly. */
+  /** Stub the provider's search so constructor auto-search resolves harmlessly. */
   function stubSearchService() {
-    const search = {
-      fetchAllSearchItems: vi.fn().mockResolvedValue({ items: [], incompleteResults: false }),
+    const provider = {
+      searchRenovatePrs: vi.fn().mockResolvedValue({ prs: [], incompleteResults: false }),
     };
-    TestBed.overrideProvider(GitHubSearchService, { useValue: search });
-    return search;
+    TestBed.overrideProvider(GitHubProviderService, { useValue: provider });
+    return provider;
   }
 
   it('should create the app', () => {
@@ -218,32 +213,6 @@ describe('App', () => {
       const app = TestBed.createComponent(App).componentInstance;
       const prs = [makePr({ workflowStatus: 'unknown' }), makePr({ workflowStatus: 'unknown' })];
       expect(app.calculateWorkflowSummary(prs)).toEqual({ success: 0, pending: 0, failed: 0 });
-    });
-  });
-
-  describe('determineMergeMethod', () => {
-    it('uses rebase for a single-commit PR when rebase is allowed', () => {
-      const app = TestBed.createComponent(App).componentInstance;
-      const pr = makePr({ commits: 1, allowRebaseMerge: true, allowSquashMerge: true });
-      expect((app as unknown as AppPrivate).determineMergeMethod(pr)).toBe('rebase');
-    });
-
-    it('uses squash for a multi-commit PR when squash is allowed', () => {
-      const app = TestBed.createComponent(App).componentInstance;
-      const pr = makePr({ commits: 3, allowSquashMerge: true, allowRebaseMerge: true });
-      expect((app as unknown as AppPrivate).determineMergeMethod(pr)).toBe('squash');
-    });
-
-    it('falls back to merge when squash is not allowed for multi-commit PR', () => {
-      const app = TestBed.createComponent(App).componentInstance;
-      const pr = makePr({ commits: 3, allowSquashMerge: false, allowMergeCommit: true });
-      expect((app as unknown as AppPrivate).determineMergeMethod(pr)).toBe('merge');
-    });
-
-    it('throws when no merge method is available', () => {
-      const app = TestBed.createComponent(App).componentInstance;
-      const pr = makePr({ commits: 1, allowRebaseMerge: false, allowSquashMerge: false, allowMergeCommit: false });
-      expect(() => (app as unknown as AppPrivate).determineMergeMethod(pr)).toThrow('No suitable merge method available');
     });
   });
 
@@ -365,7 +334,7 @@ describe('App', () => {
     });
   });
 
-  describe('fetchAllSearchItems / pagination', () => {
+  describe('search incomplete results (through the real provider)', () => {
     it('surfaces incompleteResults warning signal after searchAndProcessPullRequests', async () => {
       const app = TestBed.createComponent(App).componentInstance;
       app.connections.set([{ organization: 'my-org', token: 'ghp_test' }]);
@@ -382,12 +351,12 @@ describe('App', () => {
 
   describe('searchAndProcessPullRequests — multi-org partial failure', () => {
     it('flags incomplete (not error) when one org fails but another succeeds', async () => {
-      const search = {
-        fetchAllSearchItems: vi.fn()
-          .mockResolvedValueOnce({ items: [], incompleteResults: false }) // org-a succeeds
-          .mockRejectedValueOnce(new Error('org-b is down')),             // org-b fails
+      const provider = {
+        searchRenovatePrs: vi.fn()
+          .mockResolvedValueOnce({ prs: [], incompleteResults: false }) // org-a succeeds
+          .mockRejectedValueOnce(new Error('org-b is down')),           // org-b fails
       };
-      TestBed.overrideProvider(GitHubSearchService, { useValue: search });
+      TestBed.overrideProvider(GitHubProviderService, { useValue: provider });
 
       const app = TestBed.createComponent(App).componentInstance;
       app.connections.set([
@@ -402,10 +371,10 @@ describe('App', () => {
     });
 
     it('surfaces an error when every org fails', async () => {
-      const search = {
-        fetchAllSearchItems: vi.fn().mockRejectedValue(new Error('everything is down')),
+      const provider = {
+        searchRenovatePrs: vi.fn().mockRejectedValue(new Error('everything is down')),
       };
-      TestBed.overrideProvider(GitHubSearchService, { useValue: search });
+      TestBed.overrideProvider(GitHubProviderService, { useValue: provider });
 
       const app = TestBed.createComponent(App).componentInstance;
       app.connections.set([{ organization: 'org-a', token: 'a' }]);
@@ -416,10 +385,10 @@ describe('App', () => {
     });
 
     it('sanitizes connections before searching, skipping malformed entries', async () => {
-      const search = {
-        fetchAllSearchItems: vi.fn().mockResolvedValue({ items: [], incompleteResults: false }),
+      const provider = {
+        searchRenovatePrs: vi.fn().mockResolvedValue({ prs: [], incompleteResults: false }),
       };
-      TestBed.overrideProvider(GitHubSearchService, { useValue: search });
+      TestBed.overrideProvider(GitHubProviderService, { useValue: provider });
 
       const app = TestBed.createComponent(App).componentInstance;
       // A malformed entry (empty token) slips into the signal directly.
@@ -430,41 +399,8 @@ describe('App', () => {
 
       await app.searchAndProcessPullRequests();
 
-      expect(search.fetchAllSearchItems).toHaveBeenCalledTimes(1);
-      expect(search.fetchAllSearchItems).toHaveBeenCalledWith(expect.stringContaining('org:good-org'), 'ghp_good');
-    });
-  });
-
-  describe('apiRequest error handling', () => {
-    it('throws with the API error message on non-ok response', async () => {
-      const app = TestBed.createComponent(App).componentInstance;
-
-      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response(JSON.stringify({ message: 'Bad credentials' }), { status: 401 })
-      );
-
-      await expect((app as unknown as AppPrivate).apiRequest('https://api.github.com/test', 'ghp_test')).rejects.toThrow('Bad credentials');
-    });
-
-    it('falls back to status message when error body is not JSON', async () => {
-      const app = TestBed.createComponent(App).componentInstance;
-
-      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response('<html>Bad Gateway</html>', { status: 502, statusText: 'Bad Gateway' })
-      );
-
-      await expect((app as unknown as AppPrivate).apiRequest('https://api.github.com/test', 'ghp_test')).rejects.toThrow('API request failed with status: 502 Bad Gateway');
-    });
-
-    it('returns undefined for 204 No Content responses', async () => {
-      const app = TestBed.createComponent(App).componentInstance;
-
-      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-        new Response(null, { status: 204 })
-      );
-
-      const result = await (app as unknown as AppPrivate).apiRequest('https://api.github.com/test', 'ghp_test', 'PUT');
-      expect(result).toBeUndefined();
+      expect(provider.searchRenovatePrs).toHaveBeenCalledTimes(1);
+      expect(provider.searchRenovatePrs).toHaveBeenCalledWith({ organization: 'good-org', token: 'ghp_good' });
     });
   });
 
@@ -602,8 +538,8 @@ describe('App', () => {
 
       TestBed.createComponent(App);
 
-      expect(search.fetchAllSearchItems).toHaveBeenCalledWith(
-        expect.stringContaining('org:saved-org'), 'ghp_saved');
+      expect(search.searchRenovatePrs).toHaveBeenCalledWith(
+        { organization: 'saved-org', token: 'ghp_saved' });
     });
 
     it('does not search on startup when no connections are stored', () => {
@@ -612,7 +548,7 @@ describe('App', () => {
 
       TestBed.createComponent(App);
 
-      expect(search.fetchAllSearchItems).not.toHaveBeenCalled();
+      expect(search.searchRenovatePrs).not.toHaveBeenCalled();
     });
 
     it('re-searches when a connection is added', () => {
@@ -622,17 +558,17 @@ describe('App', () => {
       const app = TestBed.createComponent(App).componentInstance;
       app.onConnectionsChange([{ organization: 'new-org', token: 'ghp_new' }]);
 
-      expect(search.fetchAllSearchItems).toHaveBeenCalledWith(
-        expect.stringContaining('org:new-org'), 'ghp_new');
+      expect(search.searchRenovatePrs).toHaveBeenCalledWith(
+        { organization: 'new-org', token: 'ghp_new' });
     });
 
     it('clears results and ignores the in-flight search when the last org is removed', async () => {
-      let resolveSearch!: (v: { items: unknown[]; incompleteResults: boolean }) => void;
-      const search = {
-        fetchAllSearchItems: vi.fn().mockImplementation(
+      let resolveSearch!: (v: { prs: unknown[]; incompleteResults: boolean }) => void;
+      const provider = {
+        searchRenovatePrs: vi.fn().mockImplementation(
           () => new Promise(res => { resolveSearch = res; })),
       };
-      TestBed.overrideProvider(GitHubSearchService, { useValue: search });
+      TestBed.overrideProvider(GitHubProviderService, { useValue: provider });
       TestBed.overrideProvider(SessionStorageService, {
         useValue: makeStorageSpy([{ organization: 'my-org', token: 'ghp_test' }]),
       });
@@ -645,7 +581,7 @@ describe('App', () => {
       expect(app.searched()).toBe(false);
 
       // The stale search finishing must not resurrect any state.
-      resolveSearch({ items: [], incompleteResults: true });
+      resolveSearch({ prs: [], incompleteResults: true });
       await new Promise(r => setTimeout(r));
 
       expect(app.prGroups()).toEqual([]);
@@ -654,13 +590,13 @@ describe('App', () => {
     });
 
     it('discards the results of a superseded search', async () => {
-      let resolveFirst!: (v: { items: unknown[]; incompleteResults: boolean }) => void;
-      const search = {
-        fetchAllSearchItems: vi.fn()
+      let resolveFirst!: (v: { prs: unknown[]; incompleteResults: boolean }) => void;
+      const provider = {
+        searchRenovatePrs: vi.fn()
           .mockImplementationOnce(() => new Promise(res => { resolveFirst = res; }))
-          .mockResolvedValueOnce({ items: [], incompleteResults: false }),
+          .mockResolvedValueOnce({ prs: [], incompleteResults: false }),
       };
-      TestBed.overrideProvider(GitHubSearchService, { useValue: search });
+      TestBed.overrideProvider(GitHubProviderService, { useValue: provider });
 
       const app = TestBed.createComponent(App).componentInstance;
       app.connections.set([{ organization: 'my-org', token: 'ghp_test' }]);
@@ -670,7 +606,7 @@ describe('App', () => {
       await second;
 
       // If applied, the stale first search would flip incompleteResults to true.
-      resolveFirst({ items: [], incompleteResults: true });
+      resolveFirst({ prs: [], incompleteResults: true });
       await first;
 
       expect(app.incompleteResults()).toBe(false);
