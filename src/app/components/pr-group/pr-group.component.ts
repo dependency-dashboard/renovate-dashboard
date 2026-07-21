@@ -11,7 +11,7 @@ import { PrItemComponent } from '../pr-item/pr-item.component';
 })
 export class PrGroupComponent {
   group = input.required<PrGroup>();
-  expandedPrIds = input<ReadonlySet<number>>(new Set<number>());
+  expandedPrIds = input<ReadonlySet<string>>(new Set<string>());
 
   toggleGroup = output<PrGroup>();
   closePr = output<PullRequest>();

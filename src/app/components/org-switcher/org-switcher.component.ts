@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 import { OverlayModule, ConnectedPosition } from '@angular/cdk/overlay';
 import { A11yModule } from '@angular/cdk/a11y';
-import { OrgConnection } from '../../models/pull-request.model';
+import { connectionKey, DEFAULT_GITHUB_HOST, normalizeHost, OrgConnection } from '../../models/pull-request.model';
 
 /**
  * Sidebar organization switcher: a trigger button summarizing the configured
@@ -16,15 +16,18 @@ import { OrgConnection } from '../../models/pull-request.model';
 })
 export class OrgSwitcherComponent {
   connections = input<OrgConnection[]>([]);
-  /** Active org filter; null means "all organizations". */
-  selectedOrg = input<string | null>(null);
+  /** Active org filter as a canonical connection key; null means "all organizations". */
+  selectedKey = input<string | null>(null);
   connectionsChange = output<OrgConnection[]>();
-  selectedOrgChange = output<string | null>();
+  selectedKeyChange = output<string | null>();
 
   open = signal(false);
   view = signal<'list' | 'add'>('list');
+  showAdvanced = signal(false);
   draftOrg = signal('');
   draftToken = signal('');
+  draftHost = signal('');
+  draftAuthor = signal('');
 
   // Prefer opening upward (the trigger sits at the bottom of the sidebar);
   // fall back to downward if there is no room above.
@@ -33,18 +36,33 @@ export class OrgSwitcherComponent {
     { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top', offsetY: 8 },
   ];
 
+  selectedConnection = computed(() => {
+    const key = this.selectedKey();
+    if (!key) return undefined;
+    return this.connections().find(c => connectionKey(c) === key);
+  });
+
   triggerLabel = computed(() => {
-    const selected = this.selectedOrg();
-    if (selected) return selected;
+    const selected = this.selectedConnection();
+    if (selected) return selected.organization;
     const conns = this.connections();
     if (conns.length === 0) return 'Add organization';
     if (conns.length === 1) return conns[0].organization;
     return 'All organizations';
   });
 
+  triggerSublabel = computed(() => {
+    const selected = this.selectedConnection();
+    if (selected) return this.hostLabel(selected.host);
+    const hosts = [...new Set(this.connections().map(c => c.host))];
+    if (hosts.length === 1) return this.hostLabel(hosts[0]);
+    if (hosts.length > 1) return `${hosts.length} servers`;
+    return this.hostLabel(DEFAULT_GITHUB_HOST);
+  });
+
   avatarInitial = computed(() => {
-    const selected = this.selectedOrg();
-    if (selected) return selected.charAt(0).toUpperCase();
+    const selected = this.selectedConnection();
+    if (selected) return selected.organization.charAt(0).toUpperCase();
     const conns = this.connections();
     if (conns.length === 1) return conns[0].organization.charAt(0).toUpperCase();
     return conns.length > 1 ? String(conns.length) : '+';
@@ -53,26 +71,44 @@ export class OrgSwitcherComponent {
   /** The org filter is only meaningful with more than one configured org. */
   showSelection = computed(() => this.connections().length > 1);
 
-  isActiveOrg(organization: string): boolean {
-    return this.selectedOrg()?.toLowerCase() === organization.toLowerCase();
+  /** Compact display form of a connection host, e.g. 'ghes.example.com'. */
+  hostLabel(host: string): string {
+    try {
+      return new URL(host).host;
+    } catch {
+      return host;
+    }
   }
 
-  selectOrg(organization: string | null): void {
-    this.selectedOrgChange.emit(organization);
+  isActive(conn: OrgConnection): boolean {
+    return this.selectedKey() === connectionKey(conn);
+  }
+
+  select(conn: OrgConnection | null): void {
+    this.selectedKeyChange.emit(conn ? connectionKey(conn) : null);
     this.close();
   }
 
+  private draftHostNormalized = computed(() => normalizeHost(this.draftHost()));
+
+  draftHostInvalid = computed(
+    () => this.draftHost().trim().length > 0 && this.draftHostNormalized() === null,
+  );
+
   isDuplicateOrg = computed(() => {
-    // GitHub org names are case-insensitive, so compare normalized values while
-    // preserving the user's typed casing for display.
-    const org = this.draftOrg().trim().toLowerCase();
-    return org.length > 0 && this.connections().some(c => c.organization.trim().toLowerCase() === org);
+    // Identity is platform + host + org (orgs are case-insensitive); the same
+    // org name on a different server is a distinct connection.
+    const organization = this.draftOrg().trim();
+    const host = this.draftHostNormalized();
+    if (!organization || !host) return false;
+    const key = connectionKey({ platform: 'github', host, organization });
+    return this.connections().some(c => connectionKey(c) === key);
   });
 
   draftValid = computed(() => {
     const org = this.draftOrg().trim();
     const token = this.draftToken().trim();
-    return org.length > 0 && token.length > 0 && !this.isDuplicateOrg();
+    return org.length > 0 && token.length > 0 && !this.isDuplicateOrg() && !this.draftHostInvalid();
   });
 
   toggle(): void {
@@ -101,6 +137,10 @@ export class OrgSwitcherComponent {
     this.view.set('list');
   }
 
+  toggleAdvanced(): void {
+    this.showAdvanced.set(!this.showAdvanced());
+  }
+
   onOverlayKeydown(event: KeyboardEvent): void {
     if (event.key === 'Escape') {
       this.close();
@@ -115,12 +155,26 @@ export class OrgSwitcherComponent {
     this.draftToken.set((event.target as HTMLInputElement).value);
   }
 
+  onDraftHostChange(event: Event): void {
+    this.draftHost.set((event.target as HTMLInputElement).value);
+  }
+
+  onDraftAuthorChange(event: Event): void {
+    this.draftAuthor.set((event.target as HTMLInputElement).value);
+  }
+
   addConnection(): void {
     if (!this.draftValid()) return;
-    this.connectionsChange.emit([
-      ...this.connections(),
-      { organization: this.draftOrg().trim(), token: this.draftToken().trim() },
-    ]);
+    const host = this.draftHostNormalized() ?? DEFAULT_GITHUB_HOST;
+    const renovateAuthor = this.draftAuthor().trim();
+    const connection: OrgConnection = {
+      platform: 'github',
+      host,
+      organization: this.draftOrg().trim(),
+      token: this.draftToken().trim(),
+      ...(renovateAuthor ? { renovateAuthor } : {}),
+    };
+    this.connectionsChange.emit([...this.connections(), connection]);
     // Close so the refreshed results are immediately visible.
     this.close();
   }
@@ -130,12 +184,16 @@ export class OrgSwitcherComponent {
     this.addConnection();
   }
 
-  removeConnection(organization: string): void {
-    this.connectionsChange.emit(this.connections().filter(c => c.organization !== organization));
+  removeConnection(conn: OrgConnection): void {
+    const key = connectionKey(conn);
+    this.connectionsChange.emit(this.connections().filter(c => connectionKey(c) !== key));
   }
 
   private resetDraft(): void {
     this.draftOrg.set('');
     this.draftToken.set('');
+    this.draftHost.set('');
+    this.draftAuthor.set('');
+    this.showAdvanced.set(false);
   }
 }

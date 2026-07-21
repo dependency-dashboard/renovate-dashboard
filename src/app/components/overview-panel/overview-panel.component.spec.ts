@@ -4,8 +4,12 @@ import { OverviewPanelComponent } from './overview-panel.component';
 import { PrGroup, PullRequest } from '../../models/pull-request.model';
 
 function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
+  const id = overrides.id ?? 1;
   return {
-    id: 1,
+    id,
+    uid: `github|https://github.com|${id}`,
+    platform: 'github',
+    host: 'https://github.com',
     number: 1,
     title: 'Update dependency foo to v2',
     html_url: 'https://github.com/org/repo/pull/1',

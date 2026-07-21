@@ -20,7 +20,7 @@
       </svg>
       <span class="truncate text-[13px] font-medium text-ink">{{ triggerLabel() }}</span>
     </span>
-    <span class="block text-[11px] text-ink-3">github.com</span>
+    <span class="block truncate text-[11px] text-ink-3">{{ triggerSublabel() }}</span>
   </span>
   <svg
     class="h-3.5 w-3.5 shrink-0 text-ink-3 transition-transform duration-200"
@@ -57,10 +57,10 @@
         @if (showSelection()) {
           <button
             type="button"
-            (click)="selectOrg(null)"
+            (click)="select(null)"
             class="flex w-full items-center gap-2.5 rounded-md px-2 py-2 transition-colors hover:bg-ghost focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            [class.bg-accent-subtle]="selectedOrg() === null"
-            [attr.aria-pressed]="selectedOrg() === null"
+            [class.bg-accent-subtle]="selectedKey() === null"
+            [attr.aria-pressed]="selectedKey() === null"
           >
             <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm bg-ghost text-ink-3" aria-hidden="true">
               <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -74,7 +74,7 @@
               <span class="block truncate text-[13px] font-medium text-ink">All organizations</span>
               <span class="block text-[11px] text-ink-3">{{ connections().length }} configured</span>
             </span>
-            @if (selectedOrg() === null) {
+            @if (selectedKey() === null) {
               <svg class="h-3.5 w-3.5 shrink-0 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
               </svg>
@@ -82,15 +82,15 @@
           </button>
         }
 
-        @for (conn of connections(); track conn.organization) {
+        @for (conn of connections(); track conn.host + '|' + conn.organization) {
           <div class="flex items-center gap-1">
             @if (showSelection()) {
               <button
                 type="button"
-                (click)="selectOrg(conn.organization)"
+                (click)="select(conn)"
                 class="flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 py-2 transition-colors hover:bg-ghost focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                [class.bg-accent-subtle]="isActiveOrg(conn.organization)"
-                [attr.aria-pressed]="isActiveOrg(conn.organization)"
+                [class.bg-accent-subtle]="isActive(conn)"
+                [attr.aria-pressed]="isActive(conn)"
                 [attr.aria-label]="'Show only ' + conn.organization"
               >
                 <span
@@ -99,9 +99,9 @@
                 >{{ conn.organization.charAt(0).toUpperCase() }}</span>
                 <span class="min-w-0 flex-1 text-left">
                   <span class="block truncate text-[13px] font-medium text-ink">{{ conn.organization }}</span>
-                  <span class="block font-mono text-[11px] text-ink-3 select-none" aria-hidden="true">••••••••</span>
+                  <span class="block truncate text-[11px] text-ink-3">{{ hostLabel(conn.host) }}</span>
                 </span>
-                @if (isActiveOrg(conn.organization)) {
+                @if (isActive(conn)) {
                   <svg class="h-3.5 w-3.5 shrink-0 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
                   </svg>
@@ -115,13 +115,13 @@
                 >{{ conn.organization.charAt(0).toUpperCase() }}</span>
                 <span class="min-w-0 flex-1">
                   <span class="block truncate text-[13px] font-medium text-ink">{{ conn.organization }}</span>
-                  <span class="block font-mono text-[11px] text-ink-3 select-none" aria-hidden="true">••••••••</span>
+                  <span class="block truncate text-[11px] text-ink-3">{{ hostLabel(conn.host) }}</span>
                 </span>
               </span>
             }
             <button
               type="button"
-              (click)="removeConnection(conn.organization)"
+              (click)="removeConnection(conn)"
               [attr.aria-label]="'Remove ' + conn.organization"
               class="rounded p-1 text-ink-3 transition-colors hover:bg-rose-500/10 hover:text-rose-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
@@ -195,6 +195,65 @@
             <p id="token-storage-note" class="mt-1.5 text-[11px] text-ink-3">
               Stored for this session only — cleared when the tab is closed.
             </p>
+          </div>
+
+          <!-- Advanced: server URL + Renovate author (GHES / self-hosted Renovate) -->
+          <div>
+            <button
+              type="button"
+              (click)="toggleAdvanced()"
+              [attr.aria-expanded]="showAdvanced()"
+              class="flex items-center gap-1 text-[11px] font-medium text-ink-3 transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded"
+            >
+              <svg
+                class="h-3 w-3 transition-transform duration-200"
+                [class.rotate-90]="showAdvanced()"
+                fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
+              </svg>
+              Advanced
+            </button>
+
+            @if (showAdvanced()) {
+              <div class="mt-3 space-y-3">
+                <div>
+                  <label for="draft-host" class="mb-1.5 block text-xs font-medium text-ink-2">Server URL</label>
+                  <input
+                    id="draft-host"
+                    type="text"
+                    [value]="draftHost()"
+                    (input)="onDraftHostChange($event)"
+                    placeholder="https://github.com"
+                    aria-describedby="host-note"
+                    class="w-full rounded-md border border-edge bg-ghost px-3 py-2 text-sm text-ink placeholder:text-ink-3 transition duration-200 focus:outline-none focus:ring-2 focus:ring-accent"
+                  />
+                  @if (draftHostInvalid()) {
+                    <p class="mt-1 text-xs text-amber-400">Enter a valid http(s) URL.</p>
+                  } @else {
+                    <p id="host-note" class="mt-1.5 text-[11px] text-ink-3">
+                      For GitHub Enterprise Server; leave empty for github.com.
+                    </p>
+                  }
+                </div>
+
+                <div>
+                  <label for="draft-author" class="mb-1.5 block text-xs font-medium text-ink-2">Renovate bot author</label>
+                  <input
+                    id="draft-author"
+                    type="text"
+                    [value]="draftAuthor()"
+                    (input)="onDraftAuthorChange($event)"
+                    placeholder="app/renovate"
+                    aria-describedby="author-note"
+                    class="w-full rounded-md border border-edge bg-ghost px-3 py-2 text-sm text-ink placeholder:text-ink-3 transition duration-200 focus:outline-none focus:ring-2 focus:ring-accent"
+                  />
+                  <p id="author-note" class="mt-1.5 text-[11px] text-ink-3">
+                    Search author for Renovate PRs — set this if Renovate runs self-hosted (e.g. a bot username).
+                  </p>
+                </div>
+              </div>
+            }
           </div>
 
           <button

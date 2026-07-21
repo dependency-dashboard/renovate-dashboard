@@ -4,7 +4,12 @@ import { vi } from 'vitest';
 import { GitHubProviderService } from './github-provider.service';
 import { OrgConnection, PullRequest } from '../models/pull-request.model';
 
-const CONNECTION: OrgConnection = { organization: 'my-org', token: 'ghp_test' };
+const CONNECTION: OrgConnection = {
+  platform: 'github',
+  host: 'https://github.com',
+  organization: 'my-org',
+  token: 'ghp_test',
+};
 
 interface ProviderPrivate {
   determineMergeMethod(pr: PullRequest): string;
@@ -36,8 +41,12 @@ function jsonResponse(body: unknown) {
 }
 
 function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
+  const id = overrides.id ?? 1;
   return {
-    id: 1,
+    id,
+    uid: `github|https://github.com|${id}`,
+    platform: 'github',
+    host: 'https://github.com',
     number: 1,
     title: 'Update dependency foo to v2',
     html_url: 'https://github.com/my-org/repo/pull/1',
@@ -87,6 +96,9 @@ describe('GitHubProviderService', () => {
       expect(prs).toHaveLength(1);
       expect(prs[0]).toMatchObject({
         id: 7,
+        uid: 'github|https://github.com|7',
+        platform: 'github',
+        host: 'https://github.com',
         number: 7,
         repoOwner: 'my-org',
         repoName: 'my-repo',
@@ -95,6 +107,16 @@ describe('GitHubProviderService', () => {
         workflowStatus: 'unknown',
         isProcessing: false,
       });
+    });
+
+    it('uses a per-connection Renovate author when configured', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(searchResponse([]));
+
+      await provider.searchRenovatePrs({ ...CONNECTION, renovateAuthor: 'renovate-bot' });
+
+      const calledUrl = String(fetchSpy.mock.calls[0][0]);
+      expect(calledUrl).toContain('author%3Arenovate-bot');
+      expect(calledUrl).not.toContain('app%2Frenovate');
     });
 
     it('fetches all items across multiple pages', async () => {
@@ -274,6 +296,40 @@ describe('GitHubProviderService', () => {
       expect(String(url)).toContain('/pulls/9');
       expect((init as RequestInit).method).toBe('PATCH');
       expect((init as RequestInit).body).toContain('closed');
+    });
+  });
+
+  describe('GitHub Enterprise Server hosts', () => {
+    const GHES: OrgConnection = { ...CONNECTION, host: 'https://ghes.example.com' };
+
+    it('searches under <host>/api/v3', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(searchResponse([]));
+
+      await provider.searchRenovatePrs(GHES);
+
+      expect(String(fetchSpy.mock.calls[0][0])).toContain('https://ghes.example.com/api/v3/search/issues');
+    });
+
+    it('derives PR uid and host from the connection', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(searchResponse([makeItem(3)]));
+
+      const { prs } = await provider.searchRenovatePrs(GHES);
+
+      expect(prs[0].host).toBe('https://ghes.example.com');
+      expect(prs[0].uid).toBe('github|https://ghes.example.com|3');
+    });
+
+    it('issues detail and action requests against the PR host', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+      const pr = makePr({ host: 'https://ghes.example.com', number: 4, allowMergeCommit: true });
+
+      await provider.close(pr);
+      await provider.approveAndMerge(pr);
+
+      const urls = fetchSpy.mock.calls.map(args => String(args[0]));
+      expect(urls[0]).toBe('https://ghes.example.com/api/v3/repos/my-org/repo/pulls/4');
+      expect(urls[1]).toContain('https://ghes.example.com/api/v3/repos/my-org/repo/pulls/4/reviews');
+      expect(urls.every(u => !u.includes('api.github.com'))).toBe(true);
     });
   });
 

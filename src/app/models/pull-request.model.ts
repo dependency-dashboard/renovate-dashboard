@@ -1,8 +1,51 @@
 export type CiStatus = 'success' | 'failure' | 'pending' | 'unknown';
 
+export type Platform = 'github' | 'gitlab';
+
+export const DEFAULT_GITHUB_HOST = 'https://github.com';
+
 export interface OrgConnection {
+  platform: Platform;
+  /** Origin URL of the instance, e.g. 'https://github.com' or 'https://ghes.example.com'. */
+  host: string;
   organization: string;
   token: string;
+  /** Search author for Renovate PRs; provider default (e.g. 'app/renovate') when unset. */
+  renovateAuthor?: string;
+}
+
+/**
+ * Normalize a user-supplied host to an http(s) origin. An empty value means
+ * "the default GitHub host"; an unparsable or non-http(s) value returns null.
+ */
+export function normalizeHost(raw: string): string | null {
+  const trimmed = raw.trim().replace(/\/+$/, '');
+  if (!trimmed) {
+    return DEFAULT_GITHUB_HOST;
+  }
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+      return null;
+    }
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Canonical identity of a connection: the same org name can exist on
+ * different hosts/platforms, so identity is the triple, org compared
+ * case-insensitively.
+ */
+export function connectionKey(c: Pick<OrgConnection, 'platform' | 'host' | 'organization'>): string {
+  return `${c.platform}|${c.host}|${c.organization.toLowerCase()}`;
+}
+
+/** The connection key of the connection a PR was fetched through. */
+export function prConnectionKey(pr: Pick<PullRequest, 'platform' | 'host' | 'repoOwner'>): string {
+  return `${pr.platform}|${pr.host}|${pr.repoOwner.toLowerCase()}`;
 }
 
 export interface GitHubUser {
@@ -67,6 +110,15 @@ export interface GitHubCombinedStatusResponse {
 
 export interface PullRequest {
   id: number;
+  /**
+   * Globally unique key for UI tracking (expansion state, removal). Numeric
+   * ids are only unique within one instance, so providers derive this from
+   * platform + host + id.
+   */
+  uid: string;
+  /** Platform and host of the connection this PR was fetched through. */
+  platform: Platform;
+  host: string;
   number: number;
   title: string;
   html_url: string;

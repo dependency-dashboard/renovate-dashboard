@@ -80,10 +80,10 @@
   <!-- Expanded PR list -->
   @if (group().isExpanded) {
     <div class="border-t border-edge divide-y divide-edge">
-      @for (pr of group().prs; track pr.id) {
+      @for (pr of group().prs; track pr.uid) {
         <app-pr-item
           [pr]="pr"
-          [expanded]="expandedPrIds().has(pr.id)"
+          [expanded]="expandedPrIds().has(pr.uid)"
           (toggleExpanded)="togglePrExpansion(pr)"
           (closePr)="onClosePr($event)"
           (approveAndMergePr)="onApproveAndMergePr($event)">

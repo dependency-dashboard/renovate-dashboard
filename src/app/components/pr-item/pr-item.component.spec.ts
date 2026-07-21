@@ -9,8 +9,12 @@ function findButtonByText(nativeElement: HTMLElement, text: string): HTMLButtonE
 }
 
 function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
+  const id = overrides.id ?? 1;
   return {
-    id: 1,
+    id,
+    uid: `github|https://github.com|${id}`,
+    platform: 'github',
+    host: 'https://github.com',
     number: 42,
     title: 'Update dependency foo to v2',
     html_url: 'https://github.com/org/repo/pull/42',
