@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { CiStatus, CheckRun, PullRequest } from '../../models/pull-request.model';
 
 @Component({
@@ -19,6 +19,42 @@ export class PrItemComponent {
   get isMergeDisabled(): boolean {
     return this.pr().isProcessing || this.pr().workflowStatus === 'failure';
   }
+
+  checksTotal = computed(() => this.pr().checkRuns.length);
+
+  checksPassed = computed(() =>
+    this.pr().checkRuns.filter(
+      cr => cr.conclusion === 'success' || cr.conclusion === 'skipped' || cr.conclusion === 'neutral',
+    ).length,
+  );
+
+  checksPct = computed(() =>
+    this.checksTotal() > 0 ? Math.round((this.checksPassed() / this.checksTotal()) * 100) : 0,
+  );
+
+  progressColor = computed(() => {
+    switch (this.pr().workflowStatus) {
+      case 'success': return 'bg-emerald-500';
+      case 'pending': return 'bg-amber-400';
+      case 'failure': return 'bg-rose-500';
+      default: return 'bg-ink-3';
+    }
+  });
+
+  /** Compact age like "5m", "3h", "2d", "1mo". */
+  age = computed(() => {
+    const created = new Date(this.pr().created_at).getTime();
+    if (Number.isNaN(created)) return '';
+    const minutes = Math.max(0, Math.floor((Date.now() - created) / 60_000));
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h`;
+    const days = Math.floor(hours / 24);
+    if (days < 30) return `${days}d`;
+    const months = Math.floor(days / 30);
+    if (months < 12) return `${months}mo`;
+    return `${Math.floor(months / 12)}y`;
+  });
 
   onClosePr(): void {
     this.closePr.emit(this.pr());

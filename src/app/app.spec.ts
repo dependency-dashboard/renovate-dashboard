@@ -64,6 +64,9 @@ function mockMatchMedia(prefersDark: boolean) {
 
 describe('App', () => {
   beforeEach(async () => {
+    // Tests that use the real SessionStorageService write to jsdom's
+    // sessionStorage; clear it so state never leaks between tests.
+    sessionStorage.clear();
     mockMatchMedia(false);
     await TestBed.configureTestingModule({
       imports: [App],
@@ -71,7 +74,10 @@ describe('App', () => {
     }).compileComponents();
   });
 
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    sessionStorage.clear();
+  });
 
   function makeStorageSpy(connectionsValue: unknown = null, orgValue = '', tokenValue = '', selectedOrgValue = '') {
     return {
@@ -823,6 +829,150 @@ describe('App', () => {
       app.onConnectionsChange([{ organization: 'org-a', token: 'a' }]);
 
       expect(app.selectedOrg()).toBe('org-a');
+    });
+  });
+
+  describe('filteredGroups', () => {
+    function seedGroups(app: App) {
+      app.prGroups.set([
+        makeGroup({
+          title: 'Update dependency ruby to v3',
+          prs: [
+            makePr({ id: 1, repoName: 'repo-one', workflowStatus: 'failure' }),
+            makePr({ id: 2, repoName: 'repo-two', workflowStatus: 'success' }),
+          ],
+        }),
+        makeGroup({
+          title: 'Update actions/checkout action to v5',
+          prs: [makePr({ id: 3, repoName: 'ci-repo', workflowStatus: 'success' })],
+        }),
+        makeGroup({
+          title: 'Update dependency zebra to v9',
+          prs: [
+            makePr({ id: 4, repoName: 'zoo', workflowStatus: 'pending' }),
+            makePr({ id: 5, repoName: 'zoo-two', workflowStatus: 'success' }),
+            makePr({ id: 6, repoName: 'zoo-three', workflowStatus: 'success' }),
+          ],
+        }),
+      ]);
+    }
+
+    it('matches group titles case-insensitively', () => {
+      const app = TestBed.createComponent(App).componentInstance;
+      seedGroups(app);
+
+      app.searchFilter.set('RUBY');
+
+      expect(app.filteredGroups().map(g => g.title)).toEqual(['Update dependency ruby to v3']);
+    });
+
+    it('matches repositories inside groups', () => {
+      const app = TestBed.createComponent(App).componentInstance;
+      seedGroups(app);
+
+      app.searchFilter.set('ci-repo');
+
+      expect(app.filteredGroups().map(g => g.title)).toEqual(['Update actions/checkout action to v5']);
+    });
+
+    it('keeps only groups containing a PR with the selected status', () => {
+      const app = TestBed.createComponent(App).componentInstance;
+      seedGroups(app);
+
+      app.statusFilter.set('failure');
+      expect(app.filteredGroups().map(g => g.title)).toEqual(['Update dependency ruby to v3']);
+
+      app.statusFilter.set('pending');
+      expect(app.filteredGroups().map(g => g.title)).toEqual(['Update dependency zebra to v9']);
+    });
+
+    it('sorts by failures by default, with PR-count and name alternatives', () => {
+      const app = TestBed.createComponent(App).componentInstance;
+      seedGroups(app);
+
+      expect(app.filteredGroups()[0].title).toBe('Update dependency ruby to v3'); // 1 failure
+
+      app.sortBy.set('prs');
+      expect(app.filteredGroups()[0].title).toBe('Update dependency zebra to v9'); // 3 PRs
+
+      app.sortBy.set('name');
+      expect(app.filteredGroups()[0].title).toBe('Update actions/checkout action to v5');
+    });
+
+    it('clearFilters resets search and status', () => {
+      const app = TestBed.createComponent(App).componentInstance;
+      seedGroups(app);
+      app.searchFilter.set('nothing-matches');
+      app.statusFilter.set('failure');
+      expect(app.filteredGroups()).toHaveLength(0);
+
+      app.clearFilters();
+
+      expect(app.filteredGroups()).toHaveLength(3);
+    });
+
+    it('applies on top of the org filter', () => {
+      const app = TestBed.createComponent(App).componentInstance;
+      app.prGroups.set([
+        makeGroup({
+          title: 'Update dependency foo to v2',
+          prs: [
+            makePr({ id: 1, repoOwner: 'org-a', workflowStatus: 'failure' }),
+            makePr({ id: 2, repoOwner: 'org-b', workflowStatus: 'failure' }),
+          ],
+        }),
+      ]);
+
+      app.selectedOrg.set('org-b');
+      app.statusFilter.set('failure');
+
+      const groups = app.filteredGroups();
+      expect(groups).toHaveLength(1);
+      expect(groups[0].prs.map(pr => pr.id)).toEqual([2]);
+    });
+  });
+
+  describe('mergeAllReady', () => {
+    it('approves and merges only PRs whose workflows passed', async () => {
+      const app = TestBed.createComponent(App).componentInstance;
+      app.prGroups.set([
+        makeGroup({
+          prs: [
+            makePr({ id: 1, number: 10, workflowStatus: 'success', commits: 1, allowRebaseMerge: true }),
+            makePr({ id: 2, number: 11, workflowStatus: 'failure' }),
+            makePr({ id: 3, number: 12, workflowStatus: 'pending' }),
+          ],
+        }),
+      ]);
+
+      expect(app.readyToMergePrs().map(pr => pr.number)).toEqual([10]);
+
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+      await app.mergeAllReady();
+
+      const calledUrls = fetchSpy.mock.calls.map(args => String(args[0]));
+      expect(calledUrls.some(u => u.includes('/pulls/10/'))).toBe(true);
+      expect(calledUrls.some(u => u.includes('/pulls/11/'))).toBe(false);
+      expect(calledUrls.some(u => u.includes('/pulls/12/'))).toBe(false);
+    });
+
+    it('only counts PRs visible under the active org filter', () => {
+      const app = TestBed.createComponent(App).componentInstance;
+      app.prGroups.set([
+        makeGroup({
+          prs: [
+            makePr({ id: 1, repoOwner: 'org-a', workflowStatus: 'success' }),
+            makePr({ id: 2, repoOwner: 'org-b', workflowStatus: 'success' }),
+          ],
+        }),
+      ]);
+
+      expect(app.readyToMergePrs()).toHaveLength(2);
+
+      app.selectedOrg.set('org-a');
+
+      expect(app.readyToMergePrs()).toHaveLength(1);
+      expect(app.readyToMergePrs()[0].id).toBe(1);
     });
   });
 

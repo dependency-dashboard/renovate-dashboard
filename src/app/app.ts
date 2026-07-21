@@ -16,13 +16,14 @@ import { SidebarComponent } from './components/sidebar/sidebar.component';
 import { OrgSwitcherComponent } from './components/org-switcher/org-switcher.component';
 import { PrGroupComponent } from './components/pr-group/pr-group.component';
 import { OverviewPanelComponent } from './components/overview-panel/overview-panel.component';
+import { FilterBarComponent, GroupSort, StatusFilter } from './components/filter-bar/filter-bar.component';
 import { getSourceRepositoryUrl } from './config/source-repository-url';
 import { SessionStorageService, SESSION_KEYS } from './services/session-storage.service';
 import { GitHubSearchService } from './services/github-search.service';
 
 @Component({
   selector: 'app-root',
-  imports: [SidebarComponent, OrgSwitcherComponent, PrGroupComponent, OverviewPanelComponent],
+  imports: [SidebarComponent, OrgSwitcherComponent, PrGroupComponent, OverviewPanelComponent, FilterBarComponent],
   templateUrl: './app.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -45,6 +46,12 @@ export class App {
   expandedGroupTitles = signal<Set<string>>(new Set());
   expandedPrIds = signal<Set<number>>(new Set());
   sidebarOpen = signal<boolean>(false);
+
+  // List controls (filter bar); filters narrow groups, they never hide PRs
+  // inside a matching group.
+  searchFilter = signal<string>('');
+  statusFilter = signal<StatusFilter>('all');
+  sortBy = signal<GroupSort>('failures');
 
   // Monotonic counter identifying the latest search. Searches can now overlap
   // (auto-search on load, refresh button, connection edits), so results from a
@@ -104,6 +111,45 @@ export class App {
       })
       .filter(group => group.prs.length > 0);
   });
+
+  /** visibleGroups further narrowed and ordered by the filter bar. */
+  filteredGroups = computed<PrGroup[]>(() => {
+    let groups = this.visibleGroups();
+
+    const query = this.searchFilter().trim().toLowerCase();
+    if (query) {
+      groups = groups.filter(group =>
+        group.title.toLowerCase().includes(query) ||
+        group.prs.some(pr => `${pr.repoOwner}/${pr.repoName}`.toLowerCase().includes(query)),
+      );
+    }
+
+    const status = this.statusFilter();
+    if (status !== 'all') {
+      groups = groups.filter(group => group.prs.some(pr => pr.workflowStatus === status));
+    }
+
+    const sortBy = this.sortBy();
+    return [...groups].sort((a, b) => {
+      switch (sortBy) {
+        case 'failures':
+          return b.workflowSummary.failed - a.workflowSummary.failed;
+        case 'prs':
+          return b.prs.length - a.prs.length;
+        case 'name':
+          return a.title.localeCompare(b.title);
+      }
+    });
+  });
+
+  /** Visible PRs whose workflows all passed — candidates for one-click merge. */
+  readyToMergePrs = computed(() =>
+    this.visibleGroups().flatMap(group => group.prs).filter(pr => pr.workflowStatus === 'success'),
+  );
+
+  isBulkProcessing = computed(() =>
+    this.visibleGroups().some(group => group.prs.some(pr => pr.isProcessing)),
+  );
 
   constructor() {
     effect(() => {
@@ -472,6 +518,19 @@ export class App {
       this.error.set(`Failed to merge PR #${prToUpdate.number}: ${message}`);
       this.setPrProcessingState(prToUpdate, false);
     }
+  }
+
+  /** Approve and merge every visible PR whose workflows passed. */
+  async mergeAllReady() {
+    const prsSnapshot = [...this.readyToMergePrs()];
+    for (const pr of prsSnapshot) {
+      await this.approveAndMergePullRequest(pr);
+    }
+  }
+
+  clearFilters(): void {
+    this.searchFilter.set('');
+    this.statusFilter.set('all');
   }
 
   async closeGroupPullRequests(group: PrGroup) {
