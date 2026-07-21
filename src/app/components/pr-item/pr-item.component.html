@@ -80,6 +80,19 @@
     }
   </div>
 
+  <!-- Checks progress + age -->
+  <div class="hidden md:flex items-center gap-4 shrink-0 text-xs text-ink-3">
+    @if (checksTotal() > 0) {
+      <div class="flex items-center gap-2" [title]="checksPassed() + ' of ' + checksTotal() + ' checks passed'">
+        <div class="h-1.5 w-16 overflow-hidden rounded-full bg-matte/60" aria-hidden="true">
+          <div class="h-full rounded-full transition-all" [class]="progressColor()" [style.width.%]="checksPct()"></div>
+        </div>
+        <span class="tabular-nums">{{ checksPassed() }}/{{ checksTotal() }}</span>
+      </div>
+    }
+    <span class="tabular-nums" [title]="'Opened ' + pr().created_at">{{ age() }}</span>
+  </div>
+
   <!-- Action Buttons -->
   <div class="flex items-center justify-end gap-2 shrink-0">
     <button

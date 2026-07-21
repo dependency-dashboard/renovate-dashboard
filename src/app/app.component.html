@@ -161,26 +161,76 @@
           </div>
         }
 
+        <!-- Ready-to-merge callout -->
+        @if (readyToMergePrs().length > 0) {
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-accent/20 bg-accent/5 px-4 py-3">
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent/10" aria-hidden="true">
+                <svg class="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+              </div>
+              <div class="min-w-0">
+                <span class="text-sm font-medium text-ink">
+                  {{ readyToMergePrs().length }} {{ readyToMergePrs().length === 1 ? 'pull request is' : 'pull requests are' }} ready to merge
+                </span>
+                <span class="ml-2 text-[13px] text-ink-3">All CI checks passed</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              (click)="mergeAllReady()"
+              [disabled]="isBulkProcessing()"
+              class="shrink-0 px-4 py-2 rounded-md bg-accent text-white text-[13px] font-medium shadow-sm hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"
+            >
+              Merge All Ready
+            </button>
+          </div>
+        }
+
         <!-- PR Groups -->
         @if (visibleGroups().length > 0) {
-          <div class="flex items-center gap-2 mb-1">
-            <h3 class="text-sm font-semibold text-ink">PR Groups</h3>
-            <span class="px-2 py-0.5 rounded-md bg-ghost border border-edge text-xs text-ink-2 font-mono">{{ visibleGroups().length }}</span>
-          </div>
-          <div class="space-y-2">
-            @for (group of visibleGroups(); track group.title) {
-              <app-pr-group
-                [group]="group"
-                (toggleGroup)="toggleGroup($event)"
-                (closePr)="closePullRequest($event)"
-                (approveAndMergePr)="approveAndMergePullRequest($event)"
-                (closeGroupPrs)="closeGroupPullRequests($event)"
-                (approveAndMergeGroupPrs)="approveAndMergeGroupPullRequests($event)"
-                (togglePr)="togglePullRequest($event)"
-                [expandedPrIds]="expandedPrIds()">
-              </app-pr-group>
-            }
-          </div>
+          <app-filter-bar
+            [(searchText)]="searchFilter"
+            [(status)]="statusFilter"
+            [(sortBy)]="sortBy"
+            [resultCount]="filteredGroups().length"
+            [totalCount]="visibleGroups().length">
+          </app-filter-bar>
+
+          @if (filteredGroups().length > 0) {
+            <div class="rounded-lg border border-edge bg-panel divide-y divide-edge overflow-hidden">
+              @for (group of filteredGroups(); track group.title) {
+                <app-pr-group
+                  [group]="group"
+                  (toggleGroup)="toggleGroup($event)"
+                  (closePr)="closePullRequest($event)"
+                  (approveAndMergePr)="approveAndMergePullRequest($event)"
+                  (closeGroupPrs)="closeGroupPullRequests($event)"
+                  (approveAndMergeGroupPrs)="approveAndMergeGroupPullRequests($event)"
+                  (togglePr)="togglePullRequest($event)"
+                  [expandedPrIds]="expandedPrIds()">
+                </app-pr-group>
+              }
+            </div>
+          } @else {
+            <!-- Filters excluded every group -->
+            <div class="flex flex-col items-center justify-center rounded-lg border border-edge bg-panel py-16 text-ink-3">
+              <svg class="w-10 h-10 mb-3 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <circle cx="11" cy="11" r="8"/>
+                <path stroke-linecap="round" d="M21 21l-4.35-4.35"/>
+              </svg>
+              <p class="text-sm font-medium text-ink-2">No matching PR groups</p>
+              <p class="mt-1 text-[13px]">Try adjusting your filters or search query.</p>
+              <button
+                type="button"
+                (click)="clearFilters()"
+                class="mt-3 px-3 py-1.5 text-xs font-medium rounded-md border border-edge text-ink-2 hover:bg-ghost transition-colors duration-200"
+              >
+                Clear filters
+              </button>
+            </div>
+          }
         }
 
         <!-- Empty states -->

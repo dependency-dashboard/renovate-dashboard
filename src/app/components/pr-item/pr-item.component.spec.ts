@@ -146,4 +146,62 @@ describe('PrItemComponent', () => {
       expect(fixture.componentInstance.formatConclusion(null)).toBe('Pending');
     });
   });
+
+  describe('checks progress', () => {
+    function makeCheck(id: number, conclusion: 'success' | 'failure' | 'skipped' | 'neutral' | null) {
+      return { id, name: `check-${id}`, status: 'completed' as const, conclusion, html_url: '' };
+    }
+
+    it('counts success, skipped, and neutral conclusions as passed', () => {
+      const fixture = TestBed.createComponent(PrItemComponent);
+      fixture.componentRef.setInput('pr', makePr({
+        checkRuns: [
+          makeCheck(1, 'success'),
+          makeCheck(2, 'skipped'),
+          makeCheck(3, 'neutral'),
+          makeCheck(4, 'failure'),
+          makeCheck(5, null),
+        ],
+      }));
+
+      expect(fixture.componentInstance.checksPassed()).toBe(3);
+      expect(fixture.componentInstance.checksTotal()).toBe(5);
+      expect(fixture.componentInstance.checksPct()).toBe(60);
+    });
+
+    it('renders the passed/total counter when checks exist and hides it otherwise', () => {
+      const fixture = TestBed.createComponent(PrItemComponent);
+      fixture.componentRef.setInput('pr', makePr({
+        workflowStatus: 'failure',
+        checkRuns: [makeCheck(1, 'success'), makeCheck(2, 'failure')],
+      }));
+      fixture.detectChanges();
+      expect(fixture.nativeElement.textContent).toContain('1/2');
+      expect(fixture.nativeElement.querySelector('[title*="checks passed"]')).not.toBeNull();
+
+      fixture.componentRef.setInput('pr', makePr({ checkRuns: [] }));
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[title*="checks passed"]')).toBeNull();
+    });
+  });
+
+  describe('age', () => {
+    it('formats the PR age compactly', () => {
+      const fixture = TestBed.createComponent(PrItemComponent);
+
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+      fixture.componentRef.setInput('pr', makePr({ created_at: twoHoursAgo }));
+      expect(fixture.componentInstance.age()).toBe('2h');
+
+      const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+      fixture.componentRef.setInput('pr', makePr({ created_at: threeDaysAgo }));
+      expect(fixture.componentInstance.age()).toBe('3d');
+    });
+
+    it('returns an empty string for an unparsable date', () => {
+      const fixture = TestBed.createComponent(PrItemComponent);
+      fixture.componentRef.setInput('pr', makePr({ created_at: 'not-a-date' }));
+      expect(fixture.componentInstance.age()).toBe('');
+    });
+  });
 });
