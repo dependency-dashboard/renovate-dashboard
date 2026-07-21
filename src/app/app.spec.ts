@@ -73,6 +73,25 @@ describe('App', () => {
 
   afterEach(() => vi.restoreAllMocks());
 
+  function makeStorageSpy(connectionsValue: unknown = null, orgValue = '', tokenValue = '') {
+    return {
+      get: vi.fn((key: string) => key === 'organization' ? orgValue : tokenValue),
+      set: vi.fn(),
+      remove: vi.fn(),
+      getJson: vi.fn((key: string) => key === 'connections' ? connectionsValue : null),
+      setJson: vi.fn(),
+    };
+  }
+
+  /** Stub the search service so constructor auto-search resolves harmlessly. */
+  function stubSearchService() {
+    const search = {
+      fetchAllSearchItems: vi.fn().mockResolvedValue({ items: [], incompleteResults: false }),
+    };
+    TestBed.overrideProvider(GitHubSearchService, { useValue: search });
+    return search;
+  }
+
   it('should create the app', () => {
     const fixture = TestBed.createComponent(App);
     expect(fixture.componentInstance).toBeTruthy();
@@ -85,12 +104,12 @@ describe('App', () => {
     expect(compiled.textContent).toContain('Renovate Dashboard');
   });
 
-  it('should render the title as an h1', () => {
+  it('should render the page heading as an h1', () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
     const h1 = fixture.nativeElement.querySelector('h1');
     expect(h1).toBeTruthy();
-    expect(h1!.textContent?.trim()).toContain('Renovate Dashboard');
+    expect(h1!.textContent?.trim()).toContain('Overview');
   });
 
   it('should render GitHub link to source repository', () => {
@@ -504,51 +523,150 @@ describe('App', () => {
     });
   });
 
-  describe('top bar', () => {
-    it('shows org name in chip for a single connection', () => {
+  describe('layout chrome', () => {
+    it('shows the org name in the sidebar switcher for a single connection', () => {
       const fixture = TestBed.createComponent(App);
       fixture.componentInstance.connections.set([{ organization: 'my-org', token: 'ghp_test' }]);
       fixture.detectChanges();
-      expect(fixture.nativeElement.textContent).toContain('github.com / my-org');
+      expect(fixture.nativeElement.textContent).toContain('my-org');
+      expect(fixture.nativeElement.textContent).toContain('github.com');
     });
 
-    it('shows org count in chip for multiple connections', () => {
+    it('shows an org count in the sidebar switcher for multiple connections', () => {
       const fixture = TestBed.createComponent(App);
       fixture.componentInstance.connections.set([
         { organization: 'org-a', token: 'ghp_aaa' },
         { organization: 'org-b', token: 'ghp_bbb' },
       ]);
       fixture.detectChanges();
-      expect(fixture.nativeElement.textContent).toContain('github.com · 2 orgs');
+      expect(fixture.nativeElement.textContent).toContain('2 organizations');
     });
 
-    it('hides the connection chip when no connections are configured', () => {
+    it('prompts to add an organization and shows onboarding when none are configured', () => {
       const fixture = TestBed.createComponent(App);
       fixture.componentInstance.connections.set([]);
       fixture.detectChanges();
-      expect(fixture.nativeElement.textContent).not.toContain('github.com');
+      expect(fixture.nativeElement.textContent).toContain('Add organization');
+      expect(fixture.nativeElement.textContent).toContain('Connect a GitHub organization');
     });
 
     it('renders the theme toggle button with an accessible label', () => {
       const fixture = TestBed.createComponent(App);
       fixture.detectChanges();
-      const btn = fixture.nativeElement.querySelector('button[aria-label]') as HTMLButtonElement;
+      const btn = fixture.nativeElement.querySelector('button[aria-label^="Switch to"]') as HTMLButtonElement;
       expect(btn?.getAttribute('aria-label')).toMatch(/switch to (light|dark) mode/i);
+    });
+
+    it('renders the refresh button, disabled without a valid connection', () => {
+      const fixture = TestBed.createComponent(App);
+      fixture.componentInstance.connections.set([]);
+      fixture.detectChanges();
+      const btn = fixture.nativeElement.querySelector('button[aria-label="Refresh pull requests"]') as HTMLButtonElement;
+      expect(btn).toBeTruthy();
+      expect(btn.disabled).toBe(true);
+    });
+
+    it('updates the subtitle with the configured org', () => {
+      const app = TestBed.createComponent(App).componentInstance;
+      app.connections.set([{ organization: 'my-org', token: 'ghp_test' }]);
+      expect(app.subtitle()).toContain('the my-org organization');
+
+      app.connections.set([
+        { organization: 'org-a', token: 'a' },
+        { organization: 'org-b', token: 'b' },
+      ]);
+      expect(app.subtitle()).toContain('2 GitHub organizations');
+    });
+  });
+
+  describe('auto-search and connection changes', () => {
+    it('automatically searches on startup when stored connections exist', () => {
+      const search = stubSearchService();
+      TestBed.overrideProvider(SessionStorageService, {
+        useValue: makeStorageSpy([{ organization: 'saved-org', token: 'ghp_saved' }]),
+      });
+
+      TestBed.createComponent(App);
+
+      expect(search.fetchAllSearchItems).toHaveBeenCalledWith(
+        expect.stringContaining('org:saved-org'), 'ghp_saved');
+    });
+
+    it('does not search on startup when no connections are stored', () => {
+      const search = stubSearchService();
+      TestBed.overrideProvider(SessionStorageService, { useValue: makeStorageSpy() });
+
+      TestBed.createComponent(App);
+
+      expect(search.fetchAllSearchItems).not.toHaveBeenCalled();
+    });
+
+    it('re-searches when a connection is added', () => {
+      const search = stubSearchService();
+      TestBed.overrideProvider(SessionStorageService, { useValue: makeStorageSpy() });
+
+      const app = TestBed.createComponent(App).componentInstance;
+      app.onConnectionsChange([{ organization: 'new-org', token: 'ghp_new' }]);
+
+      expect(search.fetchAllSearchItems).toHaveBeenCalledWith(
+        expect.stringContaining('org:new-org'), 'ghp_new');
+    });
+
+    it('clears results and ignores the in-flight search when the last org is removed', async () => {
+      let resolveSearch!: (v: { items: unknown[]; incompleteResults: boolean }) => void;
+      const search = {
+        fetchAllSearchItems: vi.fn().mockImplementation(
+          () => new Promise(res => { resolveSearch = res; })),
+      };
+      TestBed.overrideProvider(GitHubSearchService, { useValue: search });
+      TestBed.overrideProvider(SessionStorageService, {
+        useValue: makeStorageSpy([{ organization: 'my-org', token: 'ghp_test' }]),
+      });
+
+      const app = TestBed.createComponent(App).componentInstance; // auto-search starts
+      expect(app.isLoading()).toBe(true);
+
+      app.onConnectionsChange([]);
+      expect(app.isLoading()).toBe(false);
+      expect(app.searched()).toBe(false);
+
+      // The stale search finishing must not resurrect any state.
+      resolveSearch({ items: [], incompleteResults: true });
+      await new Promise(r => setTimeout(r));
+
+      expect(app.prGroups()).toEqual([]);
+      expect(app.incompleteResults()).toBe(false);
+      expect(app.isLoading()).toBe(false);
+    });
+
+    it('discards the results of a superseded search', async () => {
+      let resolveFirst!: (v: { items: unknown[]; incompleteResults: boolean }) => void;
+      const search = {
+        fetchAllSearchItems: vi.fn()
+          .mockImplementationOnce(() => new Promise(res => { resolveFirst = res; }))
+          .mockResolvedValueOnce({ items: [], incompleteResults: false }),
+      };
+      TestBed.overrideProvider(GitHubSearchService, { useValue: search });
+
+      const app = TestBed.createComponent(App).componentInstance;
+      app.connections.set([{ organization: 'my-org', token: 'ghp_test' }]);
+
+      const first = app.searchAndProcessPullRequests();
+      const second = app.searchAndProcessPullRequests();
+      await second;
+
+      // If applied, the stale first search would flip incompleteResults to true.
+      resolveFirst({ items: [], incompleteResults: true });
+      await first;
+
+      expect(app.incompleteResults()).toBe(false);
+      expect(app.isLoading()).toBe(false);
     });
   });
 
   describe('sessionStorage persistence', () => {
-    function makeStorageSpy(connectionsValue: unknown = null, orgValue = '', tokenValue = '') {
-      return {
-        get: vi.fn((key: string) => key === 'organization' ? orgValue : tokenValue),
-        set: vi.fn(),
-        remove: vi.fn(),
-        getJson: vi.fn((key: string) => key === 'connections' ? connectionsValue : null),
-        setJson: vi.fn(),
-      };
-    }
-
     it('restores connections from session storage on init', () => {
+      stubSearchService();
       const saved = [{ organization: 'saved-org', token: 'saved-token' }];
       const storageSpy = makeStorageSpy(saved);
       TestBed.overrideProvider(SessionStorageService, { useValue: storageSpy });
@@ -559,6 +677,7 @@ describe('App', () => {
     });
 
     it('migrates old organization/token keys to connections on first load', () => {
+      stubSearchService();
       const storageSpy = makeStorageSpy(null, 'legacy-org', 'legacy-token');
       TestBed.overrideProvider(SessionStorageService, { useValue: storageSpy });
 
@@ -569,6 +688,7 @@ describe('App', () => {
     });
 
     it('clears the legacy organization/token keys after migrating', () => {
+      stubSearchService();
       const storageSpy = makeStorageSpy(null, 'legacy-org', 'legacy-token');
       TestBed.overrideProvider(SessionStorageService, { useValue: storageSpy });
 
@@ -579,6 +699,7 @@ describe('App', () => {
     });
 
     it('persists connections to session storage when onConnectionsChange is called', () => {
+      stubSearchService();
       const storageSpy = makeStorageSpy();
       TestBed.overrideProvider(SessionStorageService, { useValue: storageSpy });
 
@@ -611,6 +732,7 @@ describe('App', () => {
     });
 
     it('sanitizes stored connections: trims, drops invalid entries, and de-duplicates by org', () => {
+      stubSearchService();
       const storageSpy = makeStorageSpy([
         { organization: '  org-a  ', token: '  t1  ' },
         { organization: 'ORG-A', token: 't2' }, // case-insensitive duplicate
@@ -625,6 +747,7 @@ describe('App', () => {
     });
 
     it('sanitizes connections passed to onConnectionsChange before storing', () => {
+      stubSearchService();
       const storageSpy = makeStorageSpy();
       TestBed.overrideProvider(SessionStorageService, { useValue: storageSpy });
 
