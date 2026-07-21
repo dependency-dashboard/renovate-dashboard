@@ -88,9 +88,17 @@ export interface PullRequest {
   allowRebaseMerge?: boolean;
 }
 
-export interface PrGroup {
+/** Raw grouped search results: PRs sharing a Renovate title, across all orgs. */
+export interface PrGroupData {
   title: string;
   prs: PullRequest[];
+}
+
+/**
+ * View model consumed by PrGroupComponent: a (possibly org-filtered) group
+ * with its display state derived from the visible PRs.
+ */
+export interface PrGroup extends PrGroupData {
   aggregateCiStatus: 'success' | 'failure' | 'pending' | 'mixed' | 'unknown';
   isExpanded: boolean;
   workflowSummary: { success: number; pending: number; failed: number };

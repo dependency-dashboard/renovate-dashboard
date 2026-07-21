@@ -3,6 +3,7 @@ import { DOCUMENT } from '@angular/common';
 import {
   OrgConnection,
   PrGroup,
+  PrGroupData,
   PullRequest,
   GitHubCheckRunsResponse,
   GitHubCombinedStatusResponse,
@@ -33,13 +34,16 @@ export class App {
 
   // --- STATE SIGNALS ---
   connections = signal<OrgConnection[]>(this.loadConnections());
+  // The active org filter: null shows every configured organization.
+  selectedOrg = signal<string | null>(this.loadSelectedOrg());
   darkMode = signal<boolean>(this.getInitialDarkMode());
-  prGroups = signal<PrGroup[]>([]);
+  prGroups = signal<PrGroupData[]>([]);
   isLoading = signal<boolean>(false);
   error = signal<string | null>(null);
   incompleteResults = signal<boolean>(false);
   searched = signal<boolean>(false);
   workflowRefreshTrigger = signal<number>(0);
+  expandedGroupTitles = signal<Set<string>>(new Set());
   expandedPrIds = signal<Set<number>>(new Set());
   sidebarOpen = signal<boolean>(false);
 
@@ -57,6 +61,10 @@ export class App {
   );
 
   subtitle = computed(() => {
+    const selected = this.selectedOrg();
+    if (selected) {
+      return `Monitor and manage Renovate pull requests across the ${selected} organization`;
+    }
     const conns = this.connections();
     if (conns.length === 1) {
       return `Monitor and manage Renovate pull requests across the ${conns[0].organization} organization`;
@@ -65,6 +73,37 @@ export class App {
       return `Monitor and manage Renovate pull requests across ${conns.length} GitHub organizations`;
     }
     return 'Monitor and manage Renovate pull requests across your GitHub organizations';
+  });
+
+  /** Connections narrowed to the active org filter (all of them when unfiltered). */
+  visibleConnections = computed(() => {
+    const selected = this.selectedOrg()?.toLowerCase();
+    if (!selected) return this.connections();
+    return this.connections().filter(c => c.organization.toLowerCase() === selected);
+  });
+
+  /**
+   * The groups shown on the board: raw groups narrowed to the active org
+   * filter, with per-group display state derived from the visible PRs so
+   * counts and statuses always match what is on screen.
+   */
+  visibleGroups = computed<PrGroup[]>(() => {
+    const selected = this.selectedOrg()?.toLowerCase();
+    const expanded = this.expandedGroupTitles();
+    return this.prGroups()
+      .map(group => {
+        const prs = selected
+          ? group.prs.filter(pr => pr.repoOwner.toLowerCase() === selected)
+          : group.prs;
+        return {
+          title: group.title,
+          prs,
+          aggregateCiStatus: this.calculateAggregateStatus(prs.map(pr => pr.ciStatus)),
+          isExpanded: expanded.has(group.title),
+          workflowSummary: this.calculateWorkflowSummary(prs),
+        };
+      })
+      .filter(group => group.prs.length > 0);
   });
 
   constructor() {
@@ -91,6 +130,12 @@ export class App {
     this.connections.set(sanitized);
     this.storage.setJson(SESSION_KEYS.connections, sanitized);
 
+    // Reset the org filter if the selected org was just removed.
+    const selected = this.selectedOrg()?.toLowerCase();
+    if (selected && !sanitized.some(c => c.organization.toLowerCase() === selected)) {
+      this.onSelectedOrgChange(null);
+    }
+
     // Keep results in sync with the connection list: re-search when orgs
     // remain, clear the board when the last one was removed.
     if (sanitized.length > 0) {
@@ -103,6 +148,23 @@ export class App {
       this.searched.set(false);
       this.isLoading.set(false);
     }
+  }
+
+  onSelectedOrgChange(org: string | null): void {
+    this.selectedOrg.set(org);
+    this.storage.set(SESSION_KEYS.selectedOrg, org ?? '');
+    // Rescope the top-bar workflow summary to the newly visible connections.
+    this.bumpWorkflowSummaryRefresh();
+  }
+
+  private loadSelectedOrg(): string | null {
+    const stored = this.storage.get(SESSION_KEYS.selectedOrg).trim();
+    if (!stored) return null;
+    // Only honor a persisted selection that still matches a configured org.
+    const match = this.connections().find(
+      c => c.organization.toLowerCase() === stored.toLowerCase(),
+    );
+    return match ? match.organization : null;
   }
 
   private loadConnections(): OrgConnection[] {
@@ -238,7 +300,7 @@ export class App {
       const tokenByOrg = new Map(connections.map(c => [c.organization.toLowerCase(), c.token]));
 
       // Step 2: Group PRs by title
-      const groupsMap = new Map<string, PrGroup>();
+      const groupsMap = new Map<string, PrGroupData>();
       allItems.forEach((item: GitHubIssueSearchItem) => {
         const repoUrlParts = item.repository_url.split('/');
         const repoName = repoUrlParts.pop();
@@ -276,13 +338,7 @@ export class App {
         };
 
         if (!groupsMap.has(pr.title)) {
-          groupsMap.set(pr.title, {
-            title: pr.title,
-            prs: [],
-            aggregateCiStatus: 'unknown',
-            isExpanded: false,
-            workflowSummary: { success: 0, pending: 0, failed: 0 }
-          });
+          groupsMap.set(pr.title, { title: pr.title, prs: [] });
         }
         groupsMap.get(pr.title)!.prs.push(pr);
       });
@@ -297,13 +353,10 @@ export class App {
 
       if (generation !== this.searchGeneration) return;
 
-      // Step 4: Calculate aggregate status and workflow summary for each group
-      groupsMap.forEach(group => {
-        group.aggregateCiStatus = this.calculateAggregateStatus(group.prs.map(p => p.ciStatus));
-        group.workflowSummary = this.calculateWorkflowSummary(group.prs);
-      });
-
+      // Aggregate statuses and workflow summaries are derived per visible
+      // group by the visibleGroups computed, so only raw data is stored.
       this.prGroups.set(Array.from(groupsMap.values()));
+      this.expandedGroupTitles.set(new Set());
       this.expandedPrIds.set(new Set());
 
       // Trigger workflow summary refresh
@@ -501,12 +554,9 @@ export class App {
   }
 
   removePrFromGroup(prToRemove: PullRequest) {
-    const currentGroups = this.prGroups();
-    const updatedGroups = currentGroups.map(group => {
-      // Filter out the closed/merged PR
-      group.prs = group.prs.filter(p => p.id !== prToRemove.id);
-      return group;
-    }).filter(group => group.prs.length > 0); // Remove group if it becomes empty
+    const updatedGroups = this.prGroups()
+      .map(group => ({ ...group, prs: group.prs.filter(p => p.id !== prToRemove.id) }))
+      .filter(group => group.prs.length > 0); // Remove group if it becomes empty
     this.prGroups.set(updatedGroups);
 
     if (this.expandedPrIds().has(prToRemove.id)) {
@@ -518,17 +568,21 @@ export class App {
 
   setPrProcessingState(prToUpdate: PullRequest, isProcessing: boolean) {
      prToUpdate.isProcessing = isProcessing;
-     this.prGroups.set([...this.prGroups()]); // Trigger change detection
+     this.prGroups.set([...this.prGroups()]); // New array identity so visibleGroups recomputes
   }
 
   toggleGroup(group: PrGroup) {
-    group.isExpanded = !group.isExpanded;
-    if (!group.isExpanded) {
-      const updated = new Set(this.expandedPrIds());
-      group.prs.forEach(pr => updated.delete(pr.id));
-      this.expandedPrIds.set(updated);
+    const expanded = new Set(this.expandedGroupTitles());
+    if (expanded.has(group.title)) {
+      expanded.delete(group.title);
+      // Collapse the group's PR detail panels along with it.
+      const prIds = new Set(this.expandedPrIds());
+      group.prs.forEach(pr => prIds.delete(pr.id));
+      this.expandedPrIds.set(prIds);
+    } else {
+      expanded.add(group.title);
     }
-    this.prGroups.set([...this.prGroups()]); // Trigger change detection
+    this.expandedGroupTitles.set(expanded);
   }
 
   togglePullRequest(pr: PullRequest) {

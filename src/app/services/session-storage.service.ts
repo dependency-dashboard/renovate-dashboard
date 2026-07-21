@@ -4,6 +4,7 @@ export const SESSION_KEYS = {
   organization: 'organization',
   token: 'token',
   connections: 'connections',
+  selectedOrg: 'selectedOrg',
 } as const;
 
 @Injectable({ providedIn: 'root' })

@@ -47,9 +47,78 @@ describe('OrgSwitcherComponent', () => {
       expect(fixture.nativeElement.textContent).toContain('org-a');
     });
 
-    it('shows a count when multiple orgs are configured', () => {
+    it('shows "All organizations" when multiple orgs are configured and none is selected', () => {
       const fixture = createFixture([ORG_A, ORG_B]);
-      expect(fixture.nativeElement.textContent).toContain('2 organizations');
+      expect(fixture.nativeElement.textContent).toContain('All organizations');
+    });
+
+    it('shows the selected org when one is active', () => {
+      const fixture = createFixture([ORG_A, ORG_B]);
+      fixture.componentRef.setInput('selectedOrg', 'org-b');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.textContent).toContain('org-b');
+    });
+  });
+
+  describe('org selection', () => {
+    it('offers an "All organizations" option only when multiple orgs are configured', () => {
+      const multi = createFixture([ORG_A, ORG_B]);
+      openPopover(multi);
+      expect(overlayEl.textContent).toContain('All organizations');
+      multi.componentInstance.close();
+      multi.detectChanges();
+
+      const single = createFixture([ORG_A]);
+      openPopover(single);
+      expect(overlayEl.textContent).not.toContain('All organizations');
+    });
+
+    it('emits selectedOrgChange with the org and closes when an org is clicked', () => {
+      const fixture = createFixture([ORG_A, ORG_B]);
+      openPopover(fixture);
+
+      const emitted: (string | null)[] = [];
+      fixture.componentInstance.selectedOrgChange.subscribe((v: string | null) => emitted.push(v));
+
+      (overlayEl.querySelector('[aria-label="Show only org-b"]') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(emitted).toEqual(['org-b']);
+      expect(fixture.componentInstance.open()).toBe(false);
+    });
+
+    it('emits null when "All organizations" is clicked', () => {
+      const fixture = createFixture([ORG_A, ORG_B]);
+      fixture.componentRef.setInput('selectedOrg', 'org-a');
+      openPopover(fixture);
+
+      const emitted: (string | null)[] = [];
+      fixture.componentInstance.selectedOrgChange.subscribe((v: string | null) => emitted.push(v));
+
+      const allBtn = Array.from(overlayEl.querySelectorAll('button')).find(
+        b => b.textContent?.includes('All organizations')) as HTMLButtonElement;
+      allBtn.click();
+
+      expect(emitted).toEqual([null]);
+    });
+
+    it('marks the active org with aria-pressed', () => {
+      const fixture = createFixture([ORG_A, ORG_B]);
+      fixture.componentRef.setInput('selectedOrg', 'org-a');
+      openPopover(fixture);
+
+      expect(overlayEl.querySelector('[aria-label="Show only org-a"]')?.getAttribute('aria-pressed')).toBe('true');
+      expect(overlayEl.querySelector('[aria-label="Show only org-b"]')?.getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('does not render selectable org rows with a single connection', () => {
+      const fixture = createFixture([ORG_A]);
+      openPopover(fixture);
+
+      expect(overlayEl.querySelector('[aria-label^="Show only"]')).toBeNull();
+      // The org is still listed (with its remove button).
+      expect(overlayEl.textContent).toContain('org-a');
+      expect(overlayEl.querySelector('[aria-label="Remove org-a"]')).not.toBeNull();
     });
   });
 

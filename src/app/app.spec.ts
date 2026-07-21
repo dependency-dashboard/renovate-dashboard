@@ -73,9 +73,14 @@ describe('App', () => {
 
   afterEach(() => vi.restoreAllMocks());
 
-  function makeStorageSpy(connectionsValue: unknown = null, orgValue = '', tokenValue = '') {
+  function makeStorageSpy(connectionsValue: unknown = null, orgValue = '', tokenValue = '', selectedOrgValue = '') {
     return {
-      get: vi.fn((key: string) => key === 'organization' ? orgValue : tokenValue),
+      get: vi.fn((key: string) => {
+        if (key === 'organization') return orgValue;
+        if (key === 'token') return tokenValue;
+        if (key === 'selectedOrg') return selectedOrgValue;
+        return '';
+      }),
       set: vi.fn(),
       remove: vi.fn(),
       getJson: vi.fn((key: string) => key === 'connections' ? connectionsValue : null),
@@ -274,24 +279,27 @@ describe('App', () => {
   describe('toggleGroup', () => {
     it('expands a collapsed group', () => {
       const app = TestBed.createComponent(App).componentInstance;
-      const group = makeGroup({ isExpanded: false });
+      const group = makeGroup({ prs: [makePr()] });
       app.prGroups.set([group]);
 
       app.toggleGroup(group);
 
-      expect(app.prGroups()[0].isExpanded).toBe(true);
+      expect(app.expandedGroupTitles().has(group.title)).toBe(true);
+      expect(app.visibleGroups()[0].isExpanded).toBe(true);
     });
 
     it('collapses an expanded group and clears its PR ids from expandedPrIds', () => {
       const app = TestBed.createComponent(App).componentInstance;
       const pr = makePr({ id: 7 });
-      const group = makeGroup({ prs: [pr], isExpanded: true });
+      const group = makeGroup({ prs: [pr] });
       app.prGroups.set([group]);
+      app.expandedGroupTitles.set(new Set([group.title]));
       app.expandedPrIds.set(new Set([7]));
 
       app.toggleGroup(group);
 
-      expect(app.prGroups()[0].isExpanded).toBe(false);
+      expect(app.expandedGroupTitles().has(group.title)).toBe(false);
+      expect(app.visibleGroups()[0].isExpanded).toBe(false);
       expect(app.expandedPrIds().has(7)).toBe(false);
     });
   });
@@ -532,14 +540,14 @@ describe('App', () => {
       expect(fixture.nativeElement.textContent).toContain('github.com');
     });
 
-    it('shows an org count in the sidebar switcher for multiple connections', () => {
+    it('shows "All organizations" in the sidebar switcher for multiple connections', () => {
       const fixture = TestBed.createComponent(App);
       fixture.componentInstance.connections.set([
         { organization: 'org-a', token: 'ghp_aaa' },
         { organization: 'org-b', token: 'ghp_bbb' },
       ]);
       fixture.detectChanges();
-      expect(fixture.nativeElement.textContent).toContain('2 organizations');
+      expect(fixture.nativeElement.textContent).toContain('All organizations');
     });
 
     it('prompts to add an organization and shows onboarding when none are configured', () => {
@@ -661,6 +669,162 @@ describe('App', () => {
 
       expect(app.incompleteResults()).toBe(false);
       expect(app.isLoading()).toBe(false);
+    });
+  });
+
+  describe('per-org views', () => {
+    function seedTwoOrgGroups(app: App) {
+      app.connections.set([
+        { organization: 'org-a', token: 'a' },
+        { organization: 'org-b', token: 'b' },
+      ]);
+      app.prGroups.set([
+        makeGroup({
+          title: 'Update dependency foo to v2',
+          prs: [
+            makePr({ id: 1, repoOwner: 'org-a', workflowStatus: 'success', ciStatus: 'success' }),
+            makePr({ id: 2, repoOwner: 'org-b', workflowStatus: 'failure', ciStatus: 'failure' }),
+          ],
+        }),
+        makeGroup({
+          title: 'Update dependency bar to v3',
+          prs: [makePr({ id: 3, repoOwner: 'org-b', workflowStatus: 'pending', ciStatus: 'pending' })],
+        }),
+      ]);
+    }
+
+    it('shows all groups and PRs when no org is selected', () => {
+      const app = TestBed.createComponent(App).componentInstance;
+      seedTwoOrgGroups(app);
+
+      const groups = app.visibleGroups();
+      expect(groups).toHaveLength(2);
+      expect(groups[0].prs).toHaveLength(2);
+    });
+
+    it('filters PRs by the selected org and drops groups left empty', () => {
+      const app = TestBed.createComponent(App).componentInstance;
+      seedTwoOrgGroups(app);
+
+      app.selectedOrg.set('org-a');
+
+      const groups = app.visibleGroups();
+      expect(groups).toHaveLength(1);
+      expect(groups[0].title).toBe('Update dependency foo to v2');
+      expect(groups[0].prs.map(pr => pr.id)).toEqual([1]);
+    });
+
+    it('matches the selected org case-insensitively', () => {
+      const app = TestBed.createComponent(App).componentInstance;
+      seedTwoOrgGroups(app);
+
+      app.selectedOrg.set('ORG-A');
+
+      expect(app.visibleGroups()).toHaveLength(1);
+    });
+
+    it('derives group status and workflow summary from the visible PRs only', () => {
+      const app = TestBed.createComponent(App).componentInstance;
+      seedTwoOrgGroups(app);
+
+      // Unfiltered, the mixed group fails; filtered to org-a it succeeds.
+      expect(app.visibleGroups()[0].aggregateCiStatus).toBe('failure');
+      expect(app.visibleGroups()[0].workflowSummary).toEqual({ success: 1, pending: 0, failed: 1 });
+
+      app.selectedOrg.set('org-a');
+
+      expect(app.visibleGroups()[0].aggregateCiStatus).toBe('success');
+      expect(app.visibleGroups()[0].workflowSummary).toEqual({ success: 1, pending: 0, failed: 0 });
+    });
+
+    it('narrows visibleConnections to the selected org', () => {
+      const app = TestBed.createComponent(App).componentInstance;
+      seedTwoOrgGroups(app);
+
+      expect(app.visibleConnections()).toHaveLength(2);
+
+      app.selectedOrg.set('org-b');
+
+      expect(app.visibleConnections()).toEqual([{ organization: 'org-b', token: 'b' }]);
+    });
+
+    it('names the selected org in the subtitle', () => {
+      const app = TestBed.createComponent(App).componentInstance;
+      seedTwoOrgGroups(app);
+
+      app.selectedOrg.set('org-a');
+
+      expect(app.subtitle()).toContain('the org-a organization');
+    });
+
+    it('onSelectedOrgChange persists the selection and refreshes the workflow summary', () => {
+      const storageSpy = makeStorageSpy();
+      TestBed.overrideProvider(SessionStorageService, { useValue: storageSpy });
+
+      const app = TestBed.createComponent(App).componentInstance;
+      const triggerBefore = app.workflowRefreshTrigger();
+
+      app.onSelectedOrgChange('org-a');
+      expect(app.selectedOrg()).toBe('org-a');
+      expect(storageSpy.set).toHaveBeenCalledWith('selectedOrg', 'org-a');
+      expect(app.workflowRefreshTrigger()).toBe(triggerBefore + 1);
+
+      app.onSelectedOrgChange(null);
+      expect(storageSpy.set).toHaveBeenCalledWith('selectedOrg', '');
+    });
+
+    it('restores a persisted selection that matches a configured org', () => {
+      stubSearchService();
+      const storageSpy = makeStorageSpy(
+        [{ organization: 'Org-A', token: 'a' }], '', '', 'org-a');
+      TestBed.overrideProvider(SessionStorageService, { useValue: storageSpy });
+
+      const app = TestBed.createComponent(App).componentInstance;
+
+      // Restored with the connection's canonical casing.
+      expect(app.selectedOrg()).toBe('Org-A');
+    });
+
+    it('ignores a persisted selection that no longer matches any connection', () => {
+      stubSearchService();
+      const storageSpy = makeStorageSpy(
+        [{ organization: 'org-a', token: 'a' }], '', '', 'gone-org');
+      TestBed.overrideProvider(SessionStorageService, { useValue: storageSpy });
+
+      const app = TestBed.createComponent(App).componentInstance;
+
+      expect(app.selectedOrg()).toBeNull();
+    });
+
+    it('resets the selection when the selected org is removed', () => {
+      stubSearchService();
+      const storageSpy = makeStorageSpy();
+      TestBed.overrideProvider(SessionStorageService, { useValue: storageSpy });
+
+      const app = TestBed.createComponent(App).componentInstance;
+      app.onConnectionsChange([
+        { organization: 'org-a', token: 'a' },
+        { organization: 'org-b', token: 'b' },
+      ]);
+      app.onSelectedOrgChange('org-b');
+
+      app.onConnectionsChange([{ organization: 'org-a', token: 'a' }]);
+
+      expect(app.selectedOrg()).toBeNull();
+    });
+
+    it('keeps the selection when an unrelated org is removed', () => {
+      stubSearchService();
+      const app = TestBed.createComponent(App).componentInstance;
+      app.onConnectionsChange([
+        { organization: 'org-a', token: 'a' },
+        { organization: 'org-b', token: 'b' },
+      ]);
+      app.onSelectedOrgChange('org-a');
+
+      app.onConnectionsChange([{ organization: 'org-a', token: 'a' }]);
+
+      expect(app.selectedOrg()).toBe('org-a');
     });
   });
 

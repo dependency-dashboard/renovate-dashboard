@@ -5,8 +5,8 @@ import { OrgConnection } from '../../models/pull-request.model';
 
 /**
  * Sidebar organization switcher: a trigger button summarizing the configured
- * connections, with a CDK-overlay popover for listing, adding, and removing
- * GitHub organizations.
+ * connections, with a CDK-overlay popover for selecting the active org filter
+ * and for listing, adding, and removing GitHub organizations.
  */
 @Component({
   selector: 'app-org-switcher',
@@ -16,7 +16,10 @@ import { OrgConnection } from '../../models/pull-request.model';
 })
 export class OrgSwitcherComponent {
   connections = input<OrgConnection[]>([]);
+  /** Active org filter; null means "all organizations". */
+  selectedOrg = input<string | null>(null);
   connectionsChange = output<OrgConnection[]>();
+  selectedOrgChange = output<string | null>();
 
   open = signal(false);
   view = signal<'list' | 'add'>('list');
@@ -31,16 +34,33 @@ export class OrgSwitcherComponent {
   ];
 
   triggerLabel = computed(() => {
+    const selected = this.selectedOrg();
+    if (selected) return selected;
     const conns = this.connections();
     if (conns.length === 0) return 'Add organization';
     if (conns.length === 1) return conns[0].organization;
-    return `${conns.length} organizations`;
+    return 'All organizations';
   });
 
   avatarInitial = computed(() => {
+    const selected = this.selectedOrg();
+    if (selected) return selected.charAt(0).toUpperCase();
     const conns = this.connections();
-    return conns.length > 0 ? conns[0].organization.charAt(0).toUpperCase() : '+';
+    if (conns.length === 1) return conns[0].organization.charAt(0).toUpperCase();
+    return conns.length > 1 ? String(conns.length) : '+';
   });
+
+  /** The org filter is only meaningful with more than one configured org. */
+  showSelection = computed(() => this.connections().length > 1);
+
+  isActiveOrg(organization: string): boolean {
+    return this.selectedOrg()?.toLowerCase() === organization.toLowerCase();
+  }
+
+  selectOrg(organization: string | null): void {
+    this.selectedOrgChange.emit(organization);
+    this.close();
+  }
 
   isDuplicateOrg = computed(() => {
     // GitHub org names are case-insensitive, so compare normalized values while
