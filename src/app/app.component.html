@@ -1,142 +1,202 @@
 <div class="min-h-screen bg-page font-sans">
 
-  <!-- Top Bar -->
-  <header class="sticky top-0 z-10 border-b border-edge bg-panel/90 backdrop-blur-sm">
-    <div class="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
+  <!-- Mobile sidebar backdrop -->
+  @if (sidebarOpen()) {
+    <div
+      class="fixed inset-0 z-30 bg-black/40 lg:hidden"
+      (click)="sidebarOpen.set(false)"
+      aria-hidden="true"
+    ></div>
+  }
 
-      <!-- Left: title + active connection chip -->
-      <div class="flex items-center gap-3 min-w-0">
-        <h1 class="font-semibold text-sm text-ink">Renovate Dashboard</h1>
-        @if (connections().length > 0) {
-          <div class="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-md bg-ghost border border-edge text-xs text-ink-2 font-mono max-w-xs">
-            <!-- GitHub mark -->
-            <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+  <!-- Sidebar -->
+  <app-sidebar [groupCount]="prGroups().length" [mobileOpen]="sidebarOpen()">
+    <app-org-switcher
+      [connections]="connections()"
+      (connectionsChange)="onConnectionsChange($event)">
+    </app-org-switcher>
+  </app-sidebar>
+
+  <div class="lg:pl-[232px]">
+
+    <!-- Top Bar -->
+    <header class="sticky top-0 z-10 border-b border-edge bg-panel/90 backdrop-blur-sm">
+      <div class="flex h-14 items-center justify-between gap-4 px-4 sm:px-6">
+
+        <div class="flex min-w-0 items-center gap-3">
+          <!-- Mobile sidebar toggle -->
+          <button
+            type="button"
+            (click)="sidebarOpen.set(true)"
+            class="p-1.5 -ml-1.5 rounded-md text-ink-3 hover:bg-ghost hover:text-ink transition-colors duration-200 lg:hidden"
+            aria-label="Open sidebar"
+          >
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16"/>
+            </svg>
+          </button>
+
+          <h1 class="text-sm font-semibold text-ink">Overview</h1>
+          @if (prGroups().length > 0) {
+            <span class="rounded-md bg-accent-subtle px-2.5 py-0.5 text-[11px] font-semibold text-accent tabular-nums">
+              {{ prGroups().length }} {{ prGroups().length === 1 ? 'group' : 'groups' }}
+            </span>
+          }
+        </div>
+
+        <!-- Right: workflow summary + controls -->
+        <div class="flex items-center gap-2 shrink-0">
+          @if (prGroups().length > 0) {
+            <app-workflow-summary
+              [connections]="connections()"
+              [refreshTrigger]="workflowRefreshTrigger()">
+            </app-workflow-summary>
+          }
+
+          <!-- Refresh -->
+          <button
+            type="button"
+            (click)="searchAndProcessPullRequests()"
+            [disabled]="isLoading() || !formValid()"
+            class="p-1.5 rounded-md text-ink-3 hover:text-ink hover:bg-ghost disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"
+            aria-label="Refresh pull requests"
+          >
+            <svg class="w-5 h-5" [class.animate-spin]="isLoading()" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5M5.07 15a7 7 0 0 0 11.6 2.6L20 15M18.93 9a7 7 0 0 0-11.6-2.6L4 9"/>
+            </svg>
+          </button>
+
+          <!-- Theme toggle -->
+          <button
+            type="button"
+            (click)="toggleDarkMode()"
+            class="p-1.5 rounded-md text-ink-3 hover:text-ink hover:bg-ghost transition-colors duration-200"
+            [attr.aria-label]="darkMode() ? 'Switch to light mode' : 'Switch to dark mode'"
+          >
+            @if (darkMode()) {
+              <!-- Sun -->
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <circle cx="12" cy="12" r="4"/>
+                <path stroke-linecap="round" d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+              </svg>
+            } @else {
+              <!-- Moon -->
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+              </svg>
+            }
+          </button>
+
+          <!-- Source link -->
+          <a
+            [href]="sourceRepositoryUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="p-1.5 rounded-md text-ink-3 hover:text-ink hover:bg-ghost transition-colors duration-200"
+            aria-label="View source on GitHub"
+          >
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12Z"/>
             </svg>
-            @if (connections().length === 1) {
-              <span class="truncate">github.com / {{ connections()[0].organization }}</span>
-            } @else {
-              <span class="truncate">github.com · {{ connections().length }} orgs</span>
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-5">
+
+      <!-- Page header -->
+      <div>
+        <h2 class="text-lg font-semibold text-ink">Dependency Updates</h2>
+        <p class="mt-0.5 text-[13px] text-ink-3">{{ subtitle() }}</p>
+      </div>
+
+      <!-- Results -->
+      <div class="space-y-4">
+
+        <!-- Error -->
+        @if (error()) {
+          <div class="flex items-start gap-3 px-4 py-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-sm">
+            <svg class="w-4 h-4 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"/><path stroke-linecap="round" d="M12 8v4m0 4h.01"/>
+            </svg>
+            <span><strong class="font-semibold">Error:</strong> {{ error() }}</span>
+          </div>
+        }
+
+        <!-- Incomplete results -->
+        @if (incompleteResults()) {
+          <div class="flex items-start gap-3 px-4 py-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 text-sm">
+            <svg class="w-4 h-4 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+            </svg>
+            <span><strong class="font-semibold">Incomplete results:</strong> The GitHub Search API returned partial results — some PRs may be missing. Try your search again.</span>
+          </div>
+        }
+
+        <!-- Onboarding: no connections configured -->
+        @if (connections().length === 0) {
+          <div class="text-center py-16 rounded-lg border border-dashed border-edge-2">
+            <svg class="w-10 h-10 mx-auto mb-3 text-ink-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <circle cx="18" cy="18" r="3"/>
+              <circle cx="6" cy="6" r="3"/>
+              <path stroke-linecap="round" d="M13 6h3a2 2 0 0 1 2 2v7M6 9v12"/>
+            </svg>
+            <p class="text-sm font-medium text-ink-2">Connect a GitHub organization</p>
+            <p class="mt-1 text-[13px] text-ink-3">
+              Use <span class="font-medium text-ink-2">“Add organization”</span> in the sidebar to start tracking Renovate PRs.
+            </p>
+          </div>
+        }
+
+        <!-- Loading -->
+        @if (isLoading() && prGroups().length === 0) {
+          <div class="flex flex-col items-center justify-center py-16 text-ink-3">
+            <svg class="animate-spin w-6 h-6 mb-3" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+            </svg>
+            <p class="text-sm">Fetching Renovate pull requests…</p>
+          </div>
+        }
+
+        <!-- PR Groups -->
+        @if (prGroups().length > 0) {
+          <div class="flex items-center gap-2 mb-1">
+            <h3 class="text-sm font-semibold text-ink">PR Groups</h3>
+            <span class="px-2 py-0.5 rounded-md bg-ghost border border-edge text-xs text-ink-2 font-mono">{{ prGroups().length }}</span>
+          </div>
+          <div class="space-y-2">
+            @for (group of prGroups(); track group.title) {
+              <app-pr-group
+                [group]="group"
+                (toggleGroup)="toggleGroup($event)"
+                (closePr)="closePullRequest($event)"
+                (approveAndMergePr)="approveAndMergePullRequest($event)"
+                (closeGroupPrs)="closeGroupPullRequests($event)"
+                (approveAndMergeGroupPrs)="approveAndMergeGroupPullRequests($event)"
+                (togglePr)="togglePullRequest($event)"
+                [expandedPrIds]="expandedPrIds()">
+              </app-pr-group>
             }
           </div>
         }
-      </div>
 
-      <!-- Right: workflow summary + controls -->
-      <div class="flex items-center gap-2 shrink-0">
-        @if (prGroups().length > 0) {
-          <app-workflow-summary
-            [connections]="connections()"
-            [refreshTrigger]="workflowRefreshTrigger()">
-          </app-workflow-summary>
+        <!-- Empty state -->
+        @if (searched() && prGroups().length === 0 && !error() && !isLoading()) {
+          <div class="text-center py-16 text-ink-3">
+            <svg class="w-10 h-10 mx-auto mb-3 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+            </svg>
+            <p class="text-sm">No open Renovate PRs found for the configured organizations.</p>
+          </div>
         }
 
-        <!-- Theme toggle -->
-        <button
-          type="button"
-          (click)="toggleDarkMode()"
-          class="p-1.5 rounded-md text-ink-3 hover:text-ink hover:bg-ghost transition-colors duration-200"
-          [attr.aria-label]="darkMode() ? 'Switch to light mode' : 'Switch to dark mode'"
-        >
-          @if (darkMode()) {
-            <!-- Sun -->
-            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-              <circle cx="12" cy="12" r="4"/>
-              <path stroke-linecap="round" d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
-            </svg>
-          } @else {
-            <!-- Moon -->
-            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-            </svg>
-          }
-        </button>
-
-        <!-- Source link -->
-        <a
-          [href]="sourceRepositoryUrl"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="p-1.5 rounded-md text-ink-3 hover:text-ink hover:bg-ghost transition-colors duration-200"
-          aria-label="View source on GitHub"
-        >
-          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12Z"/>
-          </svg>
-        </a>
       </div>
-    </div>
-  </header>
 
-  <!-- Main Content -->
-  <main class="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-5">
+    </main>
 
-    <!-- Connection Form -->
-    <app-search-form
-      [connections]="connections()"
-      [isLoading]="isLoading()"
-      [formValid]="formValid()"
-      (connectionsChange)="onConnectionsChange($event)"
-      (searchTriggered)="searchAndProcessPullRequests()">
-    </app-search-form>
-
-    <!-- Results -->
-    <div class="space-y-4">
-
-      <!-- Error -->
-      @if (error()) {
-        <div class="flex items-start gap-3 px-4 py-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-sm">
-          <svg class="w-4 h-4 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <circle cx="12" cy="12" r="10"/><path stroke-linecap="round" d="M12 8v4m0 4h.01"/>
-          </svg>
-          <span><strong class="font-semibold">Error:</strong> {{ error() }}</span>
-        </div>
-      }
-
-      <!-- Incomplete results -->
-      @if (incompleteResults()) {
-        <div class="flex items-start gap-3 px-4 py-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 text-sm">
-          <svg class="w-4 h-4 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-          </svg>
-          <span><strong class="font-semibold">Incomplete results:</strong> The GitHub Search API returned partial results — some PRs may be missing. Try your search again.</span>
-        </div>
-      }
-
-      <!-- PR Groups -->
-      @if (prGroups().length > 0) {
-        <div class="flex items-center gap-2 mb-1">
-          <h2 class="text-sm font-semibold text-ink">PR Groups</h2>
-          <span class="px-2 py-0.5 rounded-md bg-ghost border border-edge text-xs text-ink-2 font-mono">{{ prGroups().length }}</span>
-        </div>
-        <div class="space-y-2">
-          @for (group of prGroups(); track group.title) {
-            <app-pr-group
-              [group]="group"
-              (toggleGroup)="toggleGroup($event)"
-              (closePr)="closePullRequest($event)"
-              (approveAndMergePr)="approveAndMergePullRequest($event)"
-              (closeGroupPrs)="closeGroupPullRequests($event)"
-              (approveAndMergeGroupPrs)="approveAndMergeGroupPullRequests($event)"
-              (togglePr)="togglePullRequest($event)"
-              [expandedPrIds]="expandedPrIds()">
-            </app-pr-group>
-          }
-        </div>
-      }
-
-      <!-- Empty state -->
-      @if (searched() && prGroups().length === 0 && !error() && !isLoading()) {
-        <div class="text-center py-16 text-ink-3">
-          <svg class="w-10 h-10 mx-auto mb-3 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
-          </svg>
-          <p class="text-sm">No open Renovate PRs found for the configured organizations.</p>
-        </div>
-      }
-
-    </div>
-
-  </main>
+  </div>
 
 </div>

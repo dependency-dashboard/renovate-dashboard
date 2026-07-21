@@ -11,7 +11,8 @@ import {
   GitHubRepository,
   CiStatus,
 } from './models/pull-request.model';
-import { SearchFormComponent } from './components/search-form/search-form.component';
+import { SidebarComponent } from './components/sidebar/sidebar.component';
+import { OrgSwitcherComponent } from './components/org-switcher/org-switcher.component';
 import { PrGroupComponent } from './components/pr-group/pr-group.component';
 import { WorkflowSummaryComponent } from './workflow-summary.component';
 import { getSourceRepositoryUrl } from './config/source-repository-url';
@@ -20,7 +21,7 @@ import { GitHubSearchService } from './services/github-search.service';
 
 @Component({
   selector: 'app-root',
-  imports: [SearchFormComponent, PrGroupComponent, WorkflowSummaryComponent],
+  imports: [SidebarComponent, OrgSwitcherComponent, PrGroupComponent, WorkflowSummaryComponent],
   templateUrl: './app.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -40,6 +41,12 @@ export class App {
   searched = signal<boolean>(false);
   workflowRefreshTrigger = signal<number>(0);
   expandedPrIds = signal<Set<number>>(new Set());
+  sidebarOpen = signal<boolean>(false);
+
+  // Monotonic counter identifying the latest search. Searches can now overlap
+  // (auto-search on load, refresh button, connection edits), so results from a
+  // superseded search must be discarded instead of clobbering newer state.
+  private searchGeneration = 0;
 
   // --- COMPUTED SIGNALS ---
   // Enabled when at least one connection is usable (both fields non-empty).
@@ -49,6 +56,17 @@ export class App {
     this.connections().some(c => c.organization.trim().length > 0 && c.token.trim().length > 0),
   );
 
+  subtitle = computed(() => {
+    const conns = this.connections();
+    if (conns.length === 1) {
+      return `Monitor and manage Renovate pull requests across the ${conns[0].organization} organization`;
+    }
+    if (conns.length > 1) {
+      return `Monitor and manage Renovate pull requests across ${conns.length} GitHub organizations`;
+    }
+    return 'Monitor and manage Renovate pull requests across your GitHub organizations';
+  });
+
   constructor() {
     effect(() => {
       if (this.darkMode()) {
@@ -57,6 +75,13 @@ export class App {
         this.doc.documentElement.classList.remove('dark');
       }
     });
+
+    // With connection management tucked into the sidebar popover there is no
+    // longer a prominent search button, so fetch automatically on startup when
+    // stored connections exist.
+    if (this.formValid()) {
+      void this.searchAndProcessPullRequests();
+    }
   }
 
   // --- CONNECTION MANAGEMENT ---
@@ -65,6 +90,19 @@ export class App {
     const sanitized = this.sanitizeConnections(connections);
     this.connections.set(sanitized);
     this.storage.setJson(SESSION_KEYS.connections, sanitized);
+
+    // Keep results in sync with the connection list: re-search when orgs
+    // remain, clear the board when the last one was removed.
+    if (sanitized.length > 0) {
+      void this.searchAndProcessPullRequests();
+    } else {
+      this.searchGeneration++; // invalidate any in-flight search
+      this.prGroups.set([]);
+      this.error.set(null);
+      this.incompleteResults.set(false);
+      this.searched.set(false);
+      this.isLoading.set(false);
+    }
   }
 
   private loadConnections(): OrgConnection[] {
@@ -142,6 +180,7 @@ export class App {
       this.error.set("At least one organization connection is required.");
       return;
     }
+    const generation = ++this.searchGeneration;
     this.isLoading.set(true);
     this.error.set(null);
     this.prGroups.set([]);
@@ -165,6 +204,8 @@ export class App {
           )
         )
       );
+
+      if (generation !== this.searchGeneration) return; // superseded by a newer search
 
       // If every org failed, surface the error rather than a misleading empty state.
       const firstRejection = searchResults.find(r => r.status === 'rejected');
@@ -250,8 +291,11 @@ export class App {
       const allPrs = Array.from(groupsMap.values()).flatMap(g => g.prs);
       const BATCH_SIZE = 10;
       for (let i = 0; i < allPrs.length; i += BATCH_SIZE) {
+        if (generation !== this.searchGeneration) return; // stop fetching for a superseded search
         await Promise.all(allPrs.slice(i, i + BATCH_SIZE).map(pr => this.fetchPrDetails(pr)));
       }
+
+      if (generation !== this.searchGeneration) return;
 
       // Step 4: Calculate aggregate status and workflow summary for each group
       groupsMap.forEach(group => {
@@ -266,10 +310,14 @@ export class App {
       this.bumpWorkflowSummaryRefresh();
 
     } catch (e: unknown) {
+      if (generation !== this.searchGeneration) return;
       const message = e instanceof Error ? e.message : 'An unknown error occurred.';
       this.error.set(message);
     } finally {
-      this.isLoading.set(false);
+      // A superseded search must not clear the loading state the newer one owns.
+      if (generation === this.searchGeneration) {
+        this.isLoading.set(false);
+      }
     }
   }
 

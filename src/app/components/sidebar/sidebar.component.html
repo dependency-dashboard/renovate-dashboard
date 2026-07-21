@@ -1,0 +1,46 @@
+<aside
+  class="fixed inset-y-0 left-0 z-40 flex w-[232px] flex-col border-r border-edge bg-panel transition-transform duration-200 lg:translate-x-0"
+  [class.-translate-x-full]="!mobileOpen()"
+>
+  <!-- Brand -->
+  <div class="flex h-14 shrink-0 items-center gap-2.5 px-5">
+    <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-accent" aria-hidden="true">
+      <!-- Git pull request mark -->
+      <svg class="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <circle cx="18" cy="18" r="3"/>
+        <circle cx="6" cy="6" r="3"/>
+        <path stroke-linecap="round" d="M13 6h3a2 2 0 0 1 2 2v7M6 9v12"/>
+      </svg>
+    </span>
+    <span class="text-sm font-semibold text-ink">Renovate Dashboard</span>
+  </div>
+
+  <!-- Navigation -->
+  <div class="px-3 pb-2 pt-3">
+    <span class="px-2 text-[11px] font-medium uppercase tracking-wider text-ink-3">Navigation</span>
+  </div>
+  <nav class="flex-1 space-y-0.5 px-3" aria-label="Main">
+    <span
+      aria-current="page"
+      class="flex items-center gap-2.5 rounded bg-accent-subtle px-2.5 py-[7px] text-[13px] font-medium text-accent"
+    >
+      <svg class="h-[18px] w-[18px] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <rect x="3" y="3" width="7" height="7" rx="1"/>
+        <rect x="14" y="3" width="7" height="7" rx="1"/>
+        <rect x="3" y="14" width="7" height="7" rx="1"/>
+        <rect x="14" y="14" width="7" height="7" rx="1"/>
+      </svg>
+      <span class="flex-1">Overview</span>
+      @if (groupCount() > 0) {
+        <span class="rounded bg-accent/10 px-2 py-0.5 text-[11px] font-semibold leading-none tabular-nums">
+          {{ groupCount() }}
+        </span>
+      }
+    </span>
+  </nav>
+
+  <!-- Bottom slot (organization switcher) -->
+  <div class="shrink-0 border-t border-edge p-3">
+    <ng-content />
+  </div>
+</aside>
