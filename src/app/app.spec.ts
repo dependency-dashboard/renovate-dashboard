@@ -757,17 +757,15 @@ describe('App', () => {
       expect(app.subtitle()).toContain('the org-a organization');
     });
 
-    it('onSelectedOrgChange persists the selection and refreshes the workflow summary', () => {
+    it('onSelectedOrgChange persists the selection', () => {
       const storageSpy = makeStorageSpy();
       TestBed.overrideProvider(SessionStorageService, { useValue: storageSpy });
 
       const app = TestBed.createComponent(App).componentInstance;
-      const triggerBefore = app.workflowRefreshTrigger();
 
       app.onSelectedOrgChange('org-a');
       expect(app.selectedOrg()).toBe('org-a');
       expect(storageSpy.set).toHaveBeenCalledWith('selectedOrg', 'org-a');
-      expect(app.workflowRefreshTrigger()).toBe(triggerBefore + 1);
 
       app.onSelectedOrgChange(null);
       expect(storageSpy.set).toHaveBeenCalledWith('selectedOrg', '');

@@ -46,15 +46,8 @@
           }
         </div>
 
-        <!-- Right: workflow summary + controls -->
+        <!-- Right: controls -->
         <div class="flex items-center gap-2 shrink-0">
-          @if (visibleGroups().length > 0) {
-            <app-workflow-summary
-              [connections]="visibleConnections()"
-              [refreshTrigger]="workflowRefreshTrigger()">
-            </app-workflow-summary>
-          }
-
           <!-- Refresh -->
           <button
             type="button"
@@ -113,6 +106,11 @@
         <h2 class="text-lg font-semibold text-ink">Dependency Updates</h2>
         <p class="mt-0.5 text-[13px] text-ink-3">{{ subtitle() }}</p>
       </div>
+
+      <!-- Overview stats -->
+      @if (visibleGroups().length > 0) {
+        <app-overview-panel [groups]="visibleGroups()"></app-overview-panel>
+      }
 
       <!-- Results -->
       <div class="space-y-4">
