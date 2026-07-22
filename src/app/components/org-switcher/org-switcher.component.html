@@ -10,7 +10,8 @@
   class="flex w-full items-center gap-2.5 rounded-md border border-edge bg-page px-3 py-2.5 transition-colors duration-200 hover:bg-ghost focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
 >
   <span
-    class="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-gradient-to-br from-slate-600 to-slate-800 text-xs font-bold text-white"
+    class="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-gradient-to-br text-xs font-bold text-white"
+    [class]="triggerAvatarClass()"
     aria-hidden="true"
   >{{ avatarInitial() }}</span>
   <span class="min-w-0 flex-1 text-left">
@@ -110,7 +111,8 @@
                 [attr.aria-label]="'Show only ' + conn.organization"
               >
                 <span
-                  class="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm bg-gradient-to-br from-slate-600 to-slate-800 text-[11px] font-bold text-white"
+                  class="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm bg-gradient-to-br text-[11px] font-bold text-white"
+                  [class]="avatarClass(conn.platform)"
                   aria-hidden="true"
                 >{{ conn.organization.charAt(0).toUpperCase() }}</span>
                 <span class="min-w-0 flex-1 text-left">
@@ -126,7 +128,8 @@
             } @else {
               <span class="flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 py-2">
                 <span
-                  class="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm bg-gradient-to-br from-slate-600 to-slate-800 text-[11px] font-bold text-white"
+                  class="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm bg-gradient-to-br text-[11px] font-bold text-white"
+                  [class]="avatarClass(conn.platform)"
                   aria-hidden="true"
                 >{{ conn.organization.charAt(0).toUpperCase() }}</span>
                 <span class="min-w-0 flex-1">

@@ -20,6 +20,13 @@ export class PrItemComponent {
     return this.pr().isProcessing || this.pr().workflowStatus === 'failure';
   }
 
+  /** Platform-style reference: org/repo#42 for GitHub PRs, group/project!42 for GitLab MRs. */
+  prRef = computed(() => {
+    const pr = this.pr();
+    const separator = pr.platform === 'gitlab' ? '!' : '#';
+    return `${pr.repoOwner}/${pr.repoName}${separator}${pr.number}`;
+  });
+
   checksTotal = computed(() => this.pr().checkRuns.length);
 
   checksPassed = computed(() =>
