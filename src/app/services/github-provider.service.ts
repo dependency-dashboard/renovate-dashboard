@@ -27,6 +27,11 @@ export function githubApiBase(host: string): string {
 /** GitProvider implementation for github.com and GitHub Enterprise Server (REST v3 API). */
 @Injectable({ providedIn: 'root' })
 export class GitHubProviderService implements GitProvider {
+  // Repo merge settings are identical for every PR of a repo and rarely
+  // change, so cache them for the service lifetime instead of fetching once
+  // per PR. Storing the promise (not the value) also dedupes concurrent
+  // fetches within a detail batch.
+  private repoSettingsCache = new Map<string, Promise<GitHubRepository>>();
   async searchRenovatePrs(connection: OrgConnection): Promise<ProviderSearchResult> {
     const author = connection.renovateAuthor?.trim() || DEFAULT_RENOVATE_AUTHOR;
     const query = `is:pr author:${author} org:${connection.organization} is:open`;
@@ -80,8 +85,7 @@ export class GitHubProviderService implements GitProvider {
       pr.commits = prData.commits;
 
       // Get repository settings to determine allowed merge methods
-      const repoUrl = `${apiBase}/repos/${pr.repoOwner}/${pr.repoName}`;
-      const repoData = await this.apiRequest<GitHubRepository>(repoUrl, pr.orgToken);
+      const repoData = await this.getRepoSettings(pr);
       pr.allowSquashMerge = repoData.allow_squash_merge;
       pr.allowMergeCommit = repoData.allow_merge_commit;
       pr.allowRebaseMerge = repoData.allow_rebase_merge;
@@ -149,6 +153,19 @@ export class GitHubProviderService implements GitProvider {
   }
 
   // --- INTERNALS ---
+
+  private getRepoSettings(pr: PullRequest): Promise<GitHubRepository> {
+    const key = `${pr.host}|${pr.repoOwner}/${pr.repoName}`;
+    let settings = this.repoSettingsCache.get(key);
+    if (!settings) {
+      const repoUrl = `${githubApiBase(pr.host)}/repos/${pr.repoOwner}/${pr.repoName}`;
+      settings = this.apiRequest<GitHubRepository>(repoUrl, pr.orgToken);
+      this.repoSettingsCache.set(key, settings);
+      // Don't cache failures — the next PR of this repo should retry.
+      settings.catch(() => this.repoSettingsCache.delete(key));
+    }
+    return settings;
+  }
 
   private async fetchAllSearchItems(host: string, query: string, token: string): Promise<{ items: GitHubIssueSearchItem[]; incompleteResults: boolean }> {
     const headers = {

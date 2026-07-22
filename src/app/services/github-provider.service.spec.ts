@@ -263,6 +263,65 @@ describe('GitHubProviderService', () => {
     });
   });
 
+  describe('repo settings cache', () => {
+    function routeFetch(counters: { repo: number }) {
+      return vi.spyOn(globalThis, 'fetch').mockImplementation(url => {
+        const u = String(url);
+        if (/\/repos\/[^/]+\/[^/]+$/.test(u)) {
+          counters.repo++;
+          return Promise.resolve(jsonResponse({ allow_squash_merge: true, allow_merge_commit: true, allow_rebase_merge: true }));
+        }
+        if (u.includes('/pulls/')) {
+          return Promise.resolve(jsonResponse({ commits: 1, head: { sha: 'sha-1' } }));
+        }
+        if (u.includes('/status')) {
+          return Promise.resolve(jsonResponse({ state: 'success' }));
+        }
+        return Promise.resolve(jsonResponse({ total_count: 0, check_runs: [] }));
+      });
+    }
+
+    it('fetches repo settings once per repository across PRs', async () => {
+      const counters = { repo: 0 };
+      routeFetch(counters);
+
+      await provider.fetchPrDetails(makePr({ id: 1, number: 1 }));
+      await provider.fetchPrDetails(makePr({ id: 2, number: 2 }));
+      await provider.fetchPrDetails(makePr({ id: 3, number: 3, repoName: 'other-repo' }));
+
+      expect(counters.repo).toBe(2); // once for repo, once for other-repo
+    });
+
+    it('does not cache failed settings fetches', async () => {
+      let calls = 0;
+      vi.spyOn(globalThis, 'fetch').mockImplementation(url => {
+        const u = String(url);
+        if (/\/repos\/[^/]+\/[^/]+$/.test(u)) {
+          calls++;
+          return calls === 1
+            ? Promise.resolve(new Response('{}', { status: 500 }))
+            : Promise.resolve(jsonResponse({ allow_squash_merge: true, allow_merge_commit: true, allow_rebase_merge: true }));
+        }
+        if (u.includes('/pulls/')) {
+          return Promise.resolve(jsonResponse({ commits: 1, head: { sha: 'sha-1' } }));
+        }
+        if (u.includes('/status')) {
+          return Promise.resolve(jsonResponse({ state: 'success' }));
+        }
+        return Promise.resolve(jsonResponse({ total_count: 0, check_runs: [] }));
+      });
+
+      const first = makePr({ id: 1, number: 1 });
+      await provider.fetchPrDetails(first); // settings fetch fails → statuses unknown
+      expect(first.ciStatus).toBe('unknown');
+
+      const second = makePr({ id: 2, number: 2 });
+      await provider.fetchPrDetails(second); // retried, not served from cache
+      expect(calls).toBe(2);
+      expect(second.allowSquashMerge).toBe(true);
+    });
+  });
+
   describe('approveAndMerge', () => {
     it('approves and then merges with the determined method', async () => {
       const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
