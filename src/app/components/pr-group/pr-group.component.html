@@ -57,6 +57,17 @@
       <div class="flex gap-2">
         <button
           type="button"
+          class="p-1.5 rounded-md text-ink-3 hover:text-ink hover:bg-ghost disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"
+          (click)="onRefreshGroup()"
+          [disabled]="refreshing() || isGroupProcessing()"
+          [attr.aria-label]="'Refresh statuses for group: ' + group().title"
+        >
+          <svg class="w-4 h-4" [class.animate-spin]="refreshing()" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5M5.07 15a7 7 0 0 0 11.6 2.6L20 15M18.93 9a7 7 0 0 0-11.6-2.6L4 9"/>
+          </svg>
+        </button>
+        <button
+          type="button"
           class="px-3 py-1.5 text-xs font-medium rounded-md border border-edge text-ink-2 hover:bg-ghost disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"
           (click)="onCloseGroup()"
           [disabled]="group().prs.length === 0 || isGroupProcessing()"

@@ -12,8 +12,11 @@ import { PrItemComponent } from '../pr-item/pr-item.component';
 export class PrGroupComponent {
   group = input.required<PrGroup>();
   expandedPrIds = input<ReadonlySet<string>>(new Set<string>());
+  /** True while a per-group status refresh is in flight. */
+  refreshing = input(false);
 
   toggleGroup = output<PrGroup>();
+  refreshGroup = output<PrGroup>();
   closePr = output<PullRequest>();
   approveAndMergePr = output<PullRequest>();
   closeGroupPrs = output<PrGroup>();
@@ -22,6 +25,10 @@ export class PrGroupComponent {
 
   onToggleGroup(): void {
     this.toggleGroup.emit(this.group());
+  }
+
+  onRefreshGroup(): void {
+    this.refreshGroup.emit(this.group());
   }
 
   onClosePr(pr: PullRequest): void {

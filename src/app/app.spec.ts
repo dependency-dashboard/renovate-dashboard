@@ -313,6 +313,7 @@ describe('App', () => {
   describe('approveAndMergeGroupPullRequests', () => {
     it('skips PRs with failing workflows and merges the rest', async () => {
       const app = TestBed.createComponent(App).componentInstance;
+      vi.spyOn(window, 'confirm').mockReturnValue(true);
 
       const failingPr = makePr({ id: 1, number: 10, workflowStatus: 'failure' });
       const goodPr = makePr({ id: 2, number: 11, workflowStatus: 'success', commits: 1, allowRebaseMerge: true });
@@ -950,6 +951,7 @@ describe('App', () => {
   describe('mergeAllReady', () => {
     it('approves and merges only PRs whose workflows passed', async () => {
       const app = TestBed.createComponent(App).componentInstance;
+      vi.spyOn(window, 'confirm').mockReturnValue(true);
       app.prGroups.set([
         makeGroup({
           prs: [
@@ -988,6 +990,134 @@ describe('App', () => {
 
       expect(app.readyToMergePrs()).toHaveLength(1);
       expect(app.readyToMergePrs()[0].id).toBe(1);
+    });
+  });
+
+  describe('batch-action confirmations and notices', () => {
+    it('does nothing when the close-all confirmation is declined', async () => {
+      const app = TestBed.createComponent(App).componentInstance;
+      vi.spyOn(window, 'confirm').mockReturnValue(false);
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+      const group = makeGroup({ prs: [makePr()] });
+      app.prGroups.set([group]);
+
+      await app.closeGroupPullRequests(app.visibleGroups()[0]);
+
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(app.prGroups()).toHaveLength(1);
+    });
+
+    it('does nothing when the merge-all-ready confirmation is declined', async () => {
+      const app = TestBed.createComponent(App).componentInstance;
+      vi.spyOn(window, 'confirm').mockReturnValue(false);
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+      app.prGroups.set([makeGroup({ prs: [makePr({ workflowStatus: 'success' })] })]);
+
+      await app.mergeAllReady();
+
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('mentions skipped PRs in the confirmation and reports them in a notice afterwards', async () => {
+      const app = TestBed.createComponent(App).componentInstance;
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+
+      const group = makeGroup({
+        prs: [
+          makePr({ id: 1, number: 10, workflowStatus: 'success', commits: 1, allowRebaseMerge: true }),
+          makePr({ id: 2, number: 11, workflowStatus: 'failure' }),
+          makePr({ id: 3, number: 12, workflowStatus: 'failure' }),
+        ],
+      });
+      app.prGroups.set([group]);
+
+      await app.approveAndMergeGroupPullRequests(app.visibleGroups()[0]);
+
+      expect(confirmSpy.mock.calls[0][0]).toContain('2 with failing workflows will be skipped');
+      expect(app.notice()).toContain('2 PRs were skipped');
+    });
+
+    it('clears the notice when a new search starts', async () => {
+      const search = stubSearchService();
+      const app = TestBed.createComponent(App).componentInstance;
+      app.connections.set([conn('my-org', 'ghp_test')]);
+      app.notice.set('leftover');
+
+      await app.searchAndProcessPullRequests();
+
+      expect(app.notice()).toBeNull();
+      void search;
+    });
+  });
+
+  describe('setPrProcessingState (immutable)', () => {
+    it('replaces the PR and group objects instead of mutating them', () => {
+      const app = TestBed.createComponent(App).componentInstance;
+      const pr = makePr({ id: 1 });
+      const group = makeGroup({ prs: [pr, makePr({ id: 2 })] });
+      app.prGroups.set([group]);
+
+      app.setPrProcessingState(pr, true);
+
+      const updatedGroup = app.prGroups()[0];
+      expect(updatedGroup).not.toBe(group);
+      expect(updatedGroup.prs[0]).not.toBe(pr);
+      expect(updatedGroup.prs[0].isProcessing).toBe(true);
+      expect(pr.isProcessing).toBe(false); // original untouched
+      expect(updatedGroup.prs[1].isProcessing).toBe(false);
+      expect(app.isBulkProcessing()).toBe(true);
+    });
+  });
+
+  describe('refreshGroupStatuses', () => {
+    it('re-fetches details for the group PRs and applies them without resetting UI state', async () => {
+      const provider = {
+        searchRenovatePrs: vi.fn(),
+        fetchPrDetails: vi.fn().mockImplementation((pr: PullRequest) => {
+          pr.ciStatus = 'success';
+          pr.workflowStatus = 'success';
+          return Promise.resolve();
+        }),
+      };
+      TestBed.overrideProvider(GitHubProviderService, { useValue: provider });
+
+      const app = TestBed.createComponent(App).componentInstance;
+      const group = makeGroup({
+        prs: [makePr({ id: 1, workflowStatus: 'pending' }), makePr({ id: 2, workflowStatus: 'pending' })],
+      });
+      app.prGroups.set([group]);
+      app.expandedGroupTitles.set(new Set([group.title]));
+
+      await app.refreshGroupStatuses(app.visibleGroups()[0]);
+
+      expect(provider.fetchPrDetails).toHaveBeenCalledTimes(2);
+      expect(app.visibleGroups()[0].workflowSummary).toEqual({ success: 2, pending: 0, failed: 0 });
+      // Expansion survives the refresh.
+      expect(app.visibleGroups()[0].isExpanded).toBe(true);
+      // Originals were not mutated; clones were fetched into.
+      expect(group.prs[0].workflowStatus).toBe('pending');
+      expect(app.refreshingGroupTitles().size).toBe(0);
+    });
+
+    it('ignores a second refresh for a group already refreshing', async () => {
+      let resolveFirst!: () => void;
+      const provider = {
+        searchRenovatePrs: vi.fn(),
+        fetchPrDetails: vi.fn().mockImplementation(() => new Promise<void>(res => { resolveFirst = res; })),
+      };
+      TestBed.overrideProvider(GitHubProviderService, { useValue: provider });
+
+      const app = TestBed.createComponent(App).componentInstance;
+      app.prGroups.set([makeGroup({ prs: [makePr()] })]);
+
+      const first = app.refreshGroupStatuses(app.visibleGroups()[0]);
+      const second = app.refreshGroupStatuses(app.visibleGroups()[0]);
+
+      expect(provider.fetchPrDetails).toHaveBeenCalledTimes(1);
+      resolveFirst();
+      await Promise.all([first, second]);
+      expect(app.refreshingGroupTitles().size).toBe(0);
     });
   });
 

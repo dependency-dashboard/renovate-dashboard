@@ -52,6 +52,10 @@ export class App {
   prGroups = signal<PrGroupData[]>([]);
   isLoading = signal<boolean>(false);
   error = signal<string | null>(null);
+  /** Informational (non-error) message, e.g. PRs skipped during a batch merge. */
+  notice = signal<string | null>(null);
+  /** Titles of groups with a per-group status refresh in flight. */
+  refreshingGroupTitles = signal<Set<string>>(new Set());
   incompleteResults = signal<boolean>(false);
   searched = signal<boolean>(false);
   expandedGroupTitles = signal<Set<string>>(new Set());
@@ -331,6 +335,7 @@ export class App {
     const generation = ++this.searchGeneration;
     this.isLoading.set(true);
     this.error.set(null);
+    this.notice.set(null);
     this.prGroups.set([]);
     this.incompleteResults.set(false);
     this.searched.set(true);
@@ -451,6 +456,13 @@ export class App {
   /** Approve and merge every visible PR whose workflows passed. */
   async mergeAllReady() {
     const prsSnapshot = [...this.readyToMergePrs()];
+    if (prsSnapshot.length === 0) {
+      return;
+    }
+    const plural = prsSnapshot.length === 1 ? 'pull request' : 'pull requests';
+    if (!window.confirm(`Approve and merge ${prsSnapshot.length} ${plural} whose checks passed?`)) {
+      return;
+    }
     for (const pr of prsSnapshot) {
       await this.approveAndMergePullRequest(pr);
     }
@@ -461,9 +473,46 @@ export class App {
     this.statusFilter.set('all');
   }
 
+  /**
+   * Re-fetch CI status and check runs for one group's visible PRs without
+   * re-running the whole search, preserving expansion and filter state.
+   */
+  async refreshGroupStatuses(group: PrGroup) {
+    if (this.refreshingGroupTitles().has(group.title)) {
+      return;
+    }
+    this.refreshingGroupTitles.update(titles => new Set(titles).add(group.title));
+    try {
+      // Fetch into clones so the state in the signal is only replaced once,
+      // immutably, when everything has arrived.
+      const refreshed = group.prs.map(pr => ({ ...pr, head: { ...pr.head }, checkRuns: [...pr.checkRuns] }));
+      const BATCH_SIZE = 10;
+      for (let i = 0; i < refreshed.length; i += BATCH_SIZE) {
+        await Promise.all(refreshed.slice(i, i + BATCH_SIZE).map(pr => this.providerFor(pr).fetchPrDetails(pr)));
+      }
+
+      const byUid = new Map(refreshed.map(pr => [pr.uid, pr]));
+      this.prGroups.update(groups => groups.map(g => ({
+        ...g,
+        prs: g.prs.map(p => byUid.get(p.uid) ?? p),
+      })));
+    } finally {
+      this.refreshingGroupTitles.update(titles => {
+        const next = new Set(titles);
+        next.delete(group.title);
+        return next;
+      });
+    }
+  }
+
   async closeGroupPullRequests(group: PrGroup) {
     const prsSnapshot = [...group.prs];
     if (prsSnapshot.length === 0) {
+      return;
+    }
+
+    const plural = prsSnapshot.length === 1 ? 'pull request' : 'pull requests';
+    if (!window.confirm(`Close ${prsSnapshot.length} ${plural} in "${group.title}"? This cannot be undone from here.`)) {
       return;
     }
 
@@ -480,14 +529,31 @@ export class App {
 
     // Filter out PRs with failing workflows
     const prsToMerge = prsSnapshot.filter(pr => pr.workflowStatus !== 'failure');
+    const skipped = prsSnapshot.length - prsToMerge.length;
 
     if (prsToMerge.length === 0) {
       this.error.set('All PRs in this group have failing workflows and cannot be merged.');
       return;
     }
 
+    const plural = prsToMerge.length === 1 ? 'pull request' : 'pull requests';
+    const skippedSuffix = skipped > 0
+      ? ` (${skipped} with failing workflows will be skipped)`
+      : '';
+    if (!window.confirm(`Approve and merge ${prsToMerge.length} ${plural} in "${group.title}"${skippedSuffix}?`)) {
+      return;
+    }
+
     for (const pr of prsToMerge) {
       await this.approveAndMergePullRequest(pr);
+    }
+
+    // Don't let skipped PRs pass silently — the user may otherwise assume
+    // everything in the group was merged.
+    if (skipped > 0) {
+      this.notice.set(
+        `${skipped} ${skipped === 1 ? 'PR was' : 'PRs were'} skipped in "${group.title}" because ${skipped === 1 ? 'its' : 'their'} workflows are failing.`,
+      );
     }
   }
 
@@ -507,8 +573,13 @@ export class App {
   }
 
   setPrProcessingState(prToUpdate: PullRequest, isProcessing: boolean) {
-     prToUpdate.isProcessing = isProcessing;
-     this.prGroups.set([...this.prGroups()]); // New array identity so visibleGroups recomputes
+    // Immutable update: replace the PR (and its group) rather than mutating
+    // the object held inside the signal.
+    this.prGroups.update(groups => groups.map(group =>
+      group.prs.some(p => p.uid === prToUpdate.uid)
+        ? { ...group, prs: group.prs.map(p => p.uid === prToUpdate.uid ? { ...p, isProcessing } : p) }
+        : group,
+    ));
   }
 
   toggleGroup(group: PrGroup) {

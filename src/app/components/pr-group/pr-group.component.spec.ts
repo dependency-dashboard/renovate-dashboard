@@ -178,4 +178,32 @@ describe('PrGroupComponent', () => {
       expect(mergeAllBtn.getAttribute('aria-label')).toBe('Approve and merge all PRs in group: Update lodash');
     });
   });
+
+  describe('group refresh', () => {
+    it('emits refreshGroup when the refresh button is clicked', () => {
+      const fixture = TestBed.createComponent(PrGroupComponent);
+      const group = makeGroup({ prs: [makePr()] });
+      fixture.componentRef.setInput('group', group);
+      fixture.detectChanges();
+
+      const emitted: PrGroup[] = [];
+      fixture.componentInstance.refreshGroup.subscribe((g: PrGroup) => emitted.push(g));
+
+      const btn = fixture.nativeElement.querySelector('[aria-label^="Refresh statuses"]') as HTMLButtonElement;
+      btn.click();
+
+      expect(emitted).toEqual([group]);
+    });
+
+    it('disables the refresh button and spins while refreshing', () => {
+      const fixture = TestBed.createComponent(PrGroupComponent);
+      fixture.componentRef.setInput('group', makeGroup({ prs: [makePr()] }));
+      fixture.componentRef.setInput('refreshing', true);
+      fixture.detectChanges();
+
+      const btn = fixture.nativeElement.querySelector('[aria-label^="Refresh statuses"]') as HTMLButtonElement;
+      expect(btn.disabled).toBe(true);
+      expect(btn.querySelector('svg')?.classList.contains('animate-spin')).toBe(true);
+    });
+  });
 });
