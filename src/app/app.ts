@@ -7,9 +7,11 @@ import {
   PullRequest,
   CiStatus,
   connectionKey,
+  defaultHostFor,
   normalizeHost,
   prConnectionKey,
   DEFAULT_GITHUB_HOST,
+  Platform,
 } from './models/pull-request.model';
 import { SidebarComponent } from './components/sidebar/sidebar.component';
 import { OrgSwitcherComponent } from './components/org-switcher/org-switcher.component';
@@ -18,7 +20,9 @@ import { OverviewPanelComponent } from './components/overview-panel/overview-pan
 import { FilterBarComponent, GroupSort, StatusFilter } from './components/filter-bar/filter-bar.component';
 import { getSourceRepositoryUrl } from './config/source-repository-url';
 import { SessionStorageService, SESSION_KEYS } from './services/session-storage.service';
+import { GitProvider } from './services/git-provider';
 import { GitHubProviderService } from './services/github-provider.service';
+import { GitLabProviderService } from './services/gitlab-provider.service';
 
 @Component({
   selector: 'app-root',
@@ -29,11 +33,15 @@ import { GitHubProviderService } from './services/github-provider.service';
 export class App {
   readonly sourceRepositoryUrl = getSourceRepositoryUrl();
   private storage = inject(SessionStorageService);
-  // All platform API access goes through the provider (GitProvider); app.ts
-  // only orchestrates. GitLab/GHES support (#81) will select the provider
-  // per connection here.
-  private provider = inject(GitHubProviderService);
+  // All platform API access goes through a GitProvider; app.ts only
+  // orchestrates. The provider is chosen per connection/PR by platform.
+  private githubProvider = inject(GitHubProviderService);
+  private gitlabProvider = inject(GitLabProviderService);
   private doc = inject(DOCUMENT);
+
+  private providerFor(subject: { platform: Platform }): GitProvider {
+    return subject.platform === 'gitlab' ? this.gitlabProvider : this.githubProvider;
+  }
 
   // --- STATE SIGNALS ---
   connections = signal<OrgConnection[]>(this.loadConnections());
@@ -87,9 +95,9 @@ export class App {
       return `Monitor and manage Renovate pull requests across the ${conns[0].organization} organization`;
     }
     if (conns.length > 1) {
-      return `Monitor and manage Renovate pull requests across ${conns.length} GitHub organizations`;
+      return `Monitor and manage Renovate pull requests across ${conns.length} organizations`;
     }
-    return 'Monitor and manage Renovate pull requests across your GitHub organizations';
+    return 'Monitor and manage Renovate pull requests across your organizations';
   });
 
   /** Connections narrowed to the active org filter (all of them when unfiltered). */
@@ -270,8 +278,8 @@ export class App {
         continue;
       }
 
-      const platform = c.platform === 'gitlab' ? 'gitlab' : 'github';
-      const host = normalizeHost(typeof c.host === 'string' ? c.host : '');
+      const platform: Platform = c.platform === 'gitlab' ? 'gitlab' : 'github';
+      const host = normalizeHost(typeof c.host === 'string' ? c.host : '', defaultHostFor(platform));
       if (!host) {
         continue;
       }
@@ -338,7 +346,7 @@ export class App {
       // discard the others' results — merge what succeeded and flag the rest
       // as incomplete.
       const searchResults = await Promise.allSettled(
-        connections.map(conn => this.provider.searchRenovatePrs(conn))
+        connections.map(conn => this.providerFor(conn).searchRenovatePrs(conn))
       );
 
       if (generation !== this.searchGeneration) return; // superseded by a newer search
@@ -383,7 +391,7 @@ export class App {
       const BATCH_SIZE = 10;
       for (let i = 0; i < allPrs.length; i += BATCH_SIZE) {
         if (generation !== this.searchGeneration) return; // stop fetching for a superseded search
-        await Promise.all(allPrs.slice(i, i + BATCH_SIZE).map(pr => this.provider.fetchPrDetails(pr)));
+        await Promise.all(allPrs.slice(i, i + BATCH_SIZE).map(pr => this.providerFor(pr).fetchPrDetails(pr)));
       }
 
       if (generation !== this.searchGeneration) return;
@@ -411,7 +419,7 @@ export class App {
   async closePullRequest(prToUpdate: PullRequest) {
     this.setPrProcessingState(prToUpdate, true);
     try {
-      await this.provider.close(prToUpdate);
+      await this.providerFor(prToUpdate).close(prToUpdate);
       // Remove PR from UI
       this.removePrFromGroup(prToUpdate);
     } catch (error: unknown) {
@@ -429,7 +437,7 @@ export class App {
         throw new Error('Cannot merge PR with failing workflow checks');
       }
 
-      await this.provider.approveAndMerge(prToUpdate);
+      await this.providerFor(prToUpdate).approveAndMerge(prToUpdate);
 
       // Remove PR from UI
       this.removePrFromGroup(prToUpdate);

@@ -1,7 +1,14 @@
 import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 import { OverlayModule, ConnectedPosition } from '@angular/cdk/overlay';
 import { A11yModule } from '@angular/cdk/a11y';
-import { connectionKey, DEFAULT_GITHUB_HOST, normalizeHost, OrgConnection } from '../../models/pull-request.model';
+import {
+  connectionKey,
+  defaultHostFor,
+  normalizeHost,
+  OrgConnection,
+  Platform,
+  DEFAULT_GITHUB_HOST,
+} from '../../models/pull-request.model';
 
 /**
  * Sidebar organization switcher: a trigger button summarizing the configured
@@ -24,10 +31,38 @@ export class OrgSwitcherComponent {
   open = signal(false);
   view = signal<'list' | 'add'>('list');
   showAdvanced = signal(false);
+  draftPlatform = signal<Platform>('github');
   draftOrg = signal('');
   draftToken = signal('');
   draftHost = signal('');
   draftAuthor = signal('');
+
+  readonly platforms: { value: Platform; label: string }[] = [
+    { value: 'github', label: 'GitHub' },
+    { value: 'gitlab', label: 'GitLab' },
+  ];
+
+  /** Platform-dependent add-form copy. */
+  draftCopy = computed(() => {
+    if (this.draftPlatform() === 'gitlab') {
+      return {
+        orgLabel: 'Group',
+        orgPlaceholder: 'e.g., my-group',
+        tokenPlaceholder: "Token with 'api' scope",
+        hostPlaceholder: 'https://gitlab.com',
+        hostNote: 'For self-hosted GitLab; leave empty for gitlab.com.',
+        authorPlaceholder: 'renovate-bot',
+      };
+    }
+    return {
+      orgLabel: 'Organization',
+      orgPlaceholder: 'e.g., my-github-org',
+      tokenPlaceholder: "Token with 'repo' scope",
+      hostPlaceholder: 'https://github.com',
+      hostNote: 'For GitHub Enterprise Server; leave empty for github.com.',
+      authorPlaceholder: 'app/renovate',
+    };
+  });
 
   // Prefer opening upward (the trigger sits at the bottom of the sidebar);
   // fall back to downward if there is no room above.
@@ -68,6 +103,15 @@ export class OrgSwitcherComponent {
     return conns.length > 1 ? String(conns.length) : '+';
   });
 
+  /** Platform mark shown in the trigger; null when connections span both platforms. */
+  triggerPlatform = computed<Platform | null>(() => {
+    const selected = this.selectedConnection();
+    if (selected) return selected.platform;
+    const platforms = [...new Set(this.connections().map(c => c.platform))];
+    if (platforms.length === 1) return platforms[0];
+    return platforms.length === 0 ? 'github' : null;
+  });
+
   /** The org filter is only meaningful with more than one configured org. */
   showSelection = computed(() => this.connections().length > 1);
 
@@ -89,7 +133,9 @@ export class OrgSwitcherComponent {
     this.close();
   }
 
-  private draftHostNormalized = computed(() => normalizeHost(this.draftHost()));
+  private draftHostNormalized = computed(() =>
+    normalizeHost(this.draftHost(), defaultHostFor(this.draftPlatform())),
+  );
 
   draftHostInvalid = computed(
     () => this.draftHost().trim().length > 0 && this.draftHostNormalized() === null,
@@ -97,13 +143,17 @@ export class OrgSwitcherComponent {
 
   isDuplicateOrg = computed(() => {
     // Identity is platform + host + org (orgs are case-insensitive); the same
-    // org name on a different server is a distinct connection.
+    // org name on a different server or platform is a distinct connection.
     const organization = this.draftOrg().trim();
     const host = this.draftHostNormalized();
     if (!organization || !host) return false;
-    const key = connectionKey({ platform: 'github', host, organization });
+    const key = connectionKey({ platform: this.draftPlatform(), host, organization });
     return this.connections().some(c => connectionKey(c) === key);
   });
+
+  setDraftPlatform(platform: Platform): void {
+    this.draftPlatform.set(platform);
+  }
 
   draftValid = computed(() => {
     const org = this.draftOrg().trim();
@@ -165,10 +215,10 @@ export class OrgSwitcherComponent {
 
   addConnection(): void {
     if (!this.draftValid()) return;
-    const host = this.draftHostNormalized() ?? DEFAULT_GITHUB_HOST;
+    const host = this.draftHostNormalized() ?? defaultHostFor(this.draftPlatform());
     const renovateAuthor = this.draftAuthor().trim();
     const connection: OrgConnection = {
-      platform: 'github',
+      platform: this.draftPlatform(),
       host,
       organization: this.draftOrg().trim(),
       token: this.draftToken().trim(),
@@ -190,6 +240,7 @@ export class OrgSwitcherComponent {
   }
 
   private resetDraft(): void {
+    this.draftPlatform.set('github');
     this.draftOrg.set('');
     this.draftToken.set('');
     this.draftHost.set('');
