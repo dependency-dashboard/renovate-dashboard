@@ -206,4 +206,32 @@ describe('PrGroupComponent', () => {
       expect(btn.querySelector('svg')?.classList.contains('animate-spin')).toBe(true);
     });
   });
+
+  describe('accessibility', () => {
+    it('links the toggle to the expanded region via aria-controls', () => {
+      const fixture = TestBed.createComponent(PrGroupComponent);
+      fixture.componentRef.setInput('group', makeGroup({
+        title: 'Update dependency foo to v2',
+        prs: [makePr()],
+        isExpanded: true,
+      }));
+      fixture.detectChanges();
+
+      const toggle = fixture.nativeElement.querySelector('button[aria-expanded]') as HTMLButtonElement;
+      const controls = toggle.getAttribute('aria-controls');
+      expect(controls).toBe('group-panel-update-dependency-foo-to-v2');
+      const region = fixture.nativeElement.querySelector(`#${controls}`) as HTMLElement;
+      expect(region).not.toBeNull();
+      expect(region.getAttribute('role')).toBe('region');
+    });
+
+    it('omits aria-controls while collapsed', () => {
+      const fixture = TestBed.createComponent(PrGroupComponent);
+      fixture.componentRef.setInput('group', makeGroup({ prs: [makePr()], isExpanded: false }));
+      fixture.detectChanges();
+
+      const toggle = fixture.nativeElement.querySelector('button[aria-expanded]') as HTMLButtonElement;
+      expect(toggle.getAttribute('aria-controls')).toBeNull();
+    });
+  });
 });

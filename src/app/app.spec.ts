@@ -479,6 +479,26 @@ describe('App', () => {
     });
   });
 
+  describe('live regions', () => {
+    it('marks the error banner as an alert', () => {
+      const fixture = TestBed.createComponent(App);
+      fixture.componentInstance.error.set('boom');
+      fixture.detectChanges();
+
+      const alert = fixture.nativeElement.querySelector('[role="alert"]') as HTMLElement;
+      expect(alert?.textContent).toContain('boom');
+    });
+
+    it('announces the loading state politely', () => {
+      const fixture = TestBed.createComponent(App);
+      fixture.componentInstance.isLoading.set(true);
+      fixture.detectChanges();
+
+      const status = fixture.nativeElement.querySelector('[role="status"][aria-live="polite"]') as HTMLElement;
+      expect(status?.textContent).toContain('Fetching Renovate pull requests');
+    });
+  });
+
   describe('darkMode', () => {
     beforeEach(() => localStorage.clear());
     afterEach(() => localStorage.clear());
