@@ -151,6 +151,24 @@ describe('PrItemComponent', () => {
     });
   });
 
+  describe('prRef', () => {
+    it('formats GitHub PRs with # and GitLab MRs with !', () => {
+      const fixture = TestBed.createComponent(PrItemComponent);
+
+      fixture.componentRef.setInput('pr', makePr());
+      fixture.detectChanges();
+      expect(fixture.componentInstance.prRef()).toBe('test-org/test-repo#42');
+      expect(fixture.nativeElement.textContent).toContain('test-org/test-repo#42');
+
+      fixture.componentRef.setInput('pr', makePr({
+        platform: 'gitlab', host: 'https://gitlab.com', uid: 'gitlab|https://gitlab.com|1',
+      }));
+      fixture.detectChanges();
+      expect(fixture.componentInstance.prRef()).toBe('test-org/test-repo!42');
+      expect(fixture.nativeElement.textContent).toContain('test-org/test-repo!42');
+    });
+  });
+
   describe('checks progress', () => {
     function makeCheck(id: number, conclusion: 'success' | 'failure' | 'skipped' | 'neutral' | null) {
       return { id, name: `check-${id}`, status: 'completed' as const, conclusion, html_url: '' };

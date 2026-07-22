@@ -8,7 +8,7 @@
         class="flex items-center gap-2 text-left shrink-0"
         (click)="onToggleExpanded()"
         [attr.aria-expanded]="expanded()"
-        [attr.aria-label]="'Toggle details for ' + pr().repoOwner + '/' + pr().repoName + '#' + pr().number"
+        [attr.aria-label]="'Toggle details for ' + prRef()"
       >
         <svg
           class="w-4 h-4 text-ink-3 transition-transform duration-200 shrink-0"
@@ -28,7 +28,7 @@
           rel="noopener noreferrer"
           class="font-mono text-xs text-accent hover:underline truncate block"
         >
-          {{ pr().repoOwner }}/{{ pr().repoName }}#{{ pr().number }}
+          {{ prRef() }}
         </a>
         @if (pr().isModified) {
           <span class="inline-flex items-center gap-1 mt-0.5 text-xs bg-amber-500/15 text-amber-400 font-medium px-1.5 py-0.5 rounded-md">
@@ -98,7 +98,7 @@
     <button
       (click)="onClosePr()"
       [disabled]="pr().isProcessing"
-      [attr.aria-label]="'Close PR ' + pr().repoOwner + '/' + pr().repoName + '#' + pr().number"
+      [attr.aria-label]="'Close PR ' + prRef()"
       class="px-3 py-1.5 text-xs font-medium rounded-md border border-edge text-ink-2 hover:bg-ghost disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"
     >
       @if (pr().isProcessing) {
@@ -110,7 +110,7 @@
     <button
       (click)="onApproveAndMergePr()"
       [disabled]="isMergeDisabled"
-      [attr.aria-label]="'Approve and merge PR ' + pr().repoOwner + '/' + pr().repoName + '#' + pr().number"
+      [attr.aria-label]="'Approve and merge PR ' + prRef()"
       class="px-3 py-1.5 text-xs font-medium rounded-md bg-accent text-white hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"
     >
       @if (pr().isProcessing) {

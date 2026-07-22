@@ -115,6 +115,13 @@ export class OrgSwitcherComponent {
   /** The org filter is only meaningful with more than one configured org. */
   showSelection = computed(() => this.connections().length > 1);
 
+  /** Avatar gradient by platform (GitLab orange, GitHub slate — as in the design demo). */
+  avatarClass(platform: Platform): string {
+    return platform === 'gitlab' ? 'from-orange-500 to-orange-700' : 'from-slate-600 to-slate-800';
+  }
+
+  triggerAvatarClass = computed(() => this.avatarClass(this.triggerPlatform() ?? 'github'));
+
   /** Compact display form of a connection host, e.g. 'ghes.example.com'. */
   hostLabel(host: string): string {
     try {
