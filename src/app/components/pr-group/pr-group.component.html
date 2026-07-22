@@ -8,8 +8,9 @@
       class="flex items-center gap-2.5 flex-1 min-w-0 text-left group"
       (click)="onToggleGroup()"
       [attr.aria-expanded]="group().isExpanded"
+      [attr.aria-controls]="group().isExpanded ? panelId() : null"
     >
-      <span [innerHTML]="getCIStatusIcon(group().aggregateCiStatus)" class="shrink-0"></span>
+      <app-ci-status-icon class="shrink-0" [status]="group().aggregateCiStatus" [label]="ciStatusLabel()" />
       <span class="text-sm font-medium text-ink group-hover:text-accent truncate transition-colors duration-200 pr-1">{{ group().title }}</span>
       <svg
         class="w-4 h-4 text-ink-3 shrink-0 transition-transform duration-200"
@@ -90,7 +91,7 @@
 
   <!-- Expanded PR list -->
   @if (group().isExpanded) {
-    <div class="border-t border-edge divide-y divide-edge">
+    <div class="border-t border-edge divide-y divide-edge" [id]="panelId()" role="region" [attr.aria-label]="'Pull requests in group: ' + group().title">
       @for (pr of group().prs; track pr.uid) {
         <app-pr-item
           [pr]="pr"

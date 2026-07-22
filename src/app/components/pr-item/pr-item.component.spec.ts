@@ -226,4 +226,30 @@ describe('PrItemComponent', () => {
       expect(fixture.componentInstance.age()).toBe('');
     });
   });
+
+  describe('status icons accessibility', () => {
+    it('labels the workflow status dot', () => {
+      const fixture = TestBed.createComponent(PrItemComponent);
+      fixture.componentRef.setInput('pr', makePr({ workflowStatus: 'failure' }));
+      fixture.detectChanges();
+
+      const dot = fixture.nativeElement.querySelector('[aria-label="Workflow failed"]') as HTMLElement;
+      expect(dot).not.toBeNull();
+      expect(dot.classList.contains('bg-rose-500')).toBe(true);
+    });
+
+    it('links the details toggle to the check-run region when expanded', () => {
+      const fixture = TestBed.createComponent(PrItemComponent);
+      fixture.componentRef.setInput('pr', makePr({
+        checkRuns: [{ id: 1, name: 'ci', status: 'completed', conclusion: 'success', html_url: '' }],
+      }));
+      fixture.componentRef.setInput('expanded', true);
+      fixture.detectChanges();
+
+      const toggle = fixture.nativeElement.querySelector('button[aria-expanded]') as HTMLButtonElement;
+      const controls = toggle.getAttribute('aria-controls');
+      expect(controls).toBeTruthy();
+      expect(fixture.nativeElement.querySelector(`[id="${controls}"]`)).not.toBeNull();
+    });
+  });
 });

@@ -8,6 +8,7 @@
         class="flex items-center gap-2 text-left shrink-0"
         (click)="onToggleExpanded()"
         [attr.aria-expanded]="expanded()"
+        [attr.aria-controls]="expanded() ? detailsId() : null"
         [attr.aria-label]="'Toggle details for ' + prRef()"
       >
         <svg
@@ -18,9 +19,15 @@
         >
           <path fill-rule="evenodd" d="M6 4a1 1 0 011.707-.707l6 6a1 1 0 010 1.414l-6 6A1 1 0 016 16V4z" clip-rule="evenodd"/>
         </svg>
-        <span [innerHTML]="getCIStatusIcon(pr().ciStatus)" class="shrink-0"></span>
+        <app-ci-status-icon class="shrink-0" [status]="pr().ciStatus" [label]="'CI status: ' + pr().ciStatus" />
       </button>
-      <span [innerHTML]="getWorkflowStatusIcon(pr().workflowStatus)" class="shrink-0"></span>
+      <span
+        class="inline-block size-2 rounded-full shrink-0"
+        [class]="workflowDotClass()"
+        role="img"
+        [attr.aria-label]="workflowDotLabel()"
+        [title]="workflowDotLabel()"
+      ></span>
       <div class="min-w-0">
         <a
           [href]="pr().html_url"
@@ -43,7 +50,7 @@
 
     <!-- Check Runs -->
     @if (expanded() && pr().checkRuns.length > 0) {
-      <div class="mt-2 ml-10 space-y-1.5">
+      <div class="mt-2 ml-10 space-y-1.5" [id]="detailsId()" role="region" [attr.aria-label]="'Checks for ' + prRef()">
         @for (check of pr().checkRuns; track check.id) {
           <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs bg-ghost border border-edge rounded-md px-3 py-2">
             <a
@@ -59,12 +66,12 @@
             </a>
             <div class="flex items-center gap-3 text-ink-3">
               <span class="flex items-center gap-1">
-                <span [innerHTML]="getCheckRunStatusIcon(check.status)"></span>
+                <app-check-run-status-icon [status]="check.status" />
                 <span>{{ formatStatus(check.status) }}</span>
               </span>
               @if (check.conclusion) {
                 <span class="flex items-center gap-1">
-                  <span [innerHTML]="getCheckRunConclusionIcon(check.conclusion)"></span>
+                  <app-check-run-conclusion-icon [conclusion]="check.conclusion" />
                   <span>{{ formatConclusion(check.conclusion) }}</span>
                 </span>
               } @else {
