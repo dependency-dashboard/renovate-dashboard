@@ -268,6 +268,55 @@ describe('OrgSwitcherComponent', () => {
       expect(fixture.componentInstance.draftValid()).toBe(true);
     });
 
+    it('emits a GitLab connection with the gitlab.com default host when GitLab is selected', () => {
+      const fixture = createFixture([]);
+      openPopover(fixture);
+      fixture.componentInstance.setDraftPlatform('gitlab');
+      fixture.componentInstance.draftOrg.set('my-group');
+      fixture.componentInstance.draftToken.set('glpat-x');
+      fixture.detectChanges();
+
+      const emitted: OrgConnection[][] = [];
+      fixture.componentInstance.connectionsChange.subscribe((v: OrgConnection[]) => emitted.push(v));
+
+      (overlayEl.querySelector('form') as HTMLFormElement).dispatchEvent(new Event('submit'));
+
+      expect(emitted[0]).toEqual([{
+        platform: 'gitlab',
+        host: 'https://gitlab.com',
+        organization: 'my-group',
+        token: 'glpat-x',
+      }]);
+    });
+
+    it('adapts the add-form copy to the selected platform', () => {
+      const fixture = createFixture([]);
+      openPopover(fixture);
+      expect(overlayEl.textContent).toContain('Organization');
+
+      fixture.componentInstance.setDraftPlatform('gitlab');
+      fixture.detectChanges();
+
+      expect(overlayEl.textContent).toContain('Group');
+      const tokenInput = overlayEl.querySelector('#draft-token') as HTMLInputElement;
+      expect(tokenInput.placeholder).toContain("'api' scope");
+    });
+
+    it('treats the same org on a different platform as a new connection', () => {
+      const gitlabOrgA: OrgConnection = {
+        platform: 'gitlab', host: 'https://gitlab.com', organization: 'org-a', token: 't',
+      };
+      const fixture = createFixture([gitlabOrgA]);
+      fixture.componentInstance.draftOrg.set('org-a');
+      fixture.componentInstance.draftToken.set('tok');
+
+      // Draft defaults to GitHub on github.com — distinct from the GitLab connection.
+      expect(fixture.componentInstance.isDuplicateOrg()).toBe(false);
+
+      fixture.componentInstance.setDraftPlatform('gitlab');
+      expect(fixture.componentInstance.isDuplicateOrg()).toBe(true);
+    });
+
     it('does not emit when the draft is invalid', () => {
       const fixture = createFixture([]);
       const emitted: OrgConnection[][] = [];

@@ -5,6 +5,13 @@ export interface ProviderSearchResult {
   incompleteResults: boolean;
 }
 
+/** API failure carrying the HTTP status, so callers can special-case (e.g. best-effort approve). */
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
 /**
  * Platform-agnostic operations the dashboard needs from a git host.
  *

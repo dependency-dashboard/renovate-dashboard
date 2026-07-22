@@ -6,6 +6,7 @@ import { getSourceRepositoryUrl } from './config/source-repository-url';
 import { PullRequest, PrGroup, OrgConnection, DEFAULT_GITHUB_HOST, connectionKey } from './models/pull-request.model';
 import { SessionStorageService } from './services/session-storage.service';
 import { GitHubProviderService } from './services/github-provider.service';
+import { GitLabProviderService } from './services/gitlab-provider.service';
 
 function conn(organization: string, token: string): OrgConnection {
   return { platform: 'github', host: DEFAULT_GITHUB_HOST, organization, token };
@@ -364,6 +365,45 @@ describe('App', () => {
     });
   });
 
+  describe('provider dispatch', () => {
+    function gitlabConn(organization: string, token: string): OrgConnection {
+      return { platform: 'gitlab', host: 'https://gitlab.com', organization, token };
+    }
+
+    it('routes each connection to its platform provider when searching', async () => {
+      const github = { searchRenovatePrs: vi.fn().mockResolvedValue({ prs: [], incompleteResults: false }) };
+      const gitlab = { searchRenovatePrs: vi.fn().mockResolvedValue({ prs: [], incompleteResults: false }) };
+      TestBed.overrideProvider(GitHubProviderService, { useValue: github });
+      TestBed.overrideProvider(GitLabProviderService, { useValue: gitlab });
+
+      const app = TestBed.createComponent(App).componentInstance;
+      app.connections.set([conn('gh-org', 't1'), gitlabConn('gl-group', 't2')]);
+
+      await app.searchAndProcessPullRequests();
+
+      expect(github.searchRenovatePrs).toHaveBeenCalledTimes(1);
+      expect(github.searchRenovatePrs).toHaveBeenCalledWith(conn('gh-org', 't1'));
+      expect(gitlab.searchRenovatePrs).toHaveBeenCalledTimes(1);
+      expect(gitlab.searchRenovatePrs).toHaveBeenCalledWith(gitlabConn('gl-group', 't2'));
+    });
+
+    it('routes PR actions by the PR platform', async () => {
+      const github = { close: vi.fn().mockResolvedValue(undefined) };
+      const gitlab = { close: vi.fn().mockResolvedValue(undefined) };
+      TestBed.overrideProvider(GitHubProviderService, { useValue: github });
+      TestBed.overrideProvider(GitLabProviderService, { useValue: gitlab });
+
+      const app = TestBed.createComponent(App).componentInstance;
+      const gitlabPr = makePr({ id: 2, platform: 'gitlab', host: 'https://gitlab.com', uid: 'gitlab|https://gitlab.com|2' });
+      app.prGroups.set([makeGroup({ prs: [gitlabPr] })]);
+
+      await app.closePullRequest(gitlabPr);
+
+      expect(gitlab.close).toHaveBeenCalledWith(gitlabPr);
+      expect(github.close).not.toHaveBeenCalled();
+    });
+  });
+
   describe('searchAndProcessPullRequests — multi-org partial failure', () => {
     it('flags incomplete (not error) when one org fails but another succeeds', async () => {
       const provider = {
@@ -512,7 +552,7 @@ describe('App', () => {
       fixture.componentInstance.connections.set([]);
       fixture.detectChanges();
       expect(fixture.nativeElement.textContent).toContain('Add organization');
-      expect(fixture.nativeElement.textContent).toContain('Connect a GitHub organization');
+      expect(fixture.nativeElement.textContent).toContain('Connect an organization');
     });
 
     it('renders the theme toggle button with an accessible label', () => {
@@ -540,7 +580,7 @@ describe('App', () => {
         conn('org-a', 'a'),
         conn('org-b', 'b'),
       ]);
-      expect(app.subtitle()).toContain('2 GitHub organizations');
+      expect(app.subtitle()).toContain('2 organizations');
     });
   });
 

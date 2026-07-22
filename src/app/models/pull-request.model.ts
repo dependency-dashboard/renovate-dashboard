@@ -3,6 +3,11 @@ export type CiStatus = 'success' | 'failure' | 'pending' | 'unknown';
 export type Platform = 'github' | 'gitlab';
 
 export const DEFAULT_GITHUB_HOST = 'https://github.com';
+export const DEFAULT_GITLAB_HOST = 'https://gitlab.com';
+
+export function defaultHostFor(platform: Platform): string {
+  return platform === 'gitlab' ? DEFAULT_GITLAB_HOST : DEFAULT_GITHUB_HOST;
+}
 
 export interface OrgConnection {
   platform: Platform;
@@ -16,12 +21,12 @@ export interface OrgConnection {
 
 /**
  * Normalize a user-supplied host to an http(s) origin. An empty value means
- * "the default GitHub host"; an unparsable or non-http(s) value returns null.
+ * "the platform's default host"; an unparsable or non-http(s) value returns null.
  */
-export function normalizeHost(raw: string): string | null {
+export function normalizeHost(raw: string, defaultHost: string = DEFAULT_GITHUB_HOST): string | null {
   const trimmed = raw.trim().replace(/\/+$/, '');
   if (!trimmed) {
-    return DEFAULT_GITHUB_HOST;
+    return defaultHost;
   }
   try {
     const url = new URL(trimmed);
@@ -119,6 +124,8 @@ export interface PullRequest {
   /** Platform and host of the connection this PR was fetched through. */
   platform: Platform;
   host: string;
+  /** GitLab only: the project id, required by every project-scoped API call. */
+  projectId?: number;
   number: number;
   title: string;
   html_url: string;
