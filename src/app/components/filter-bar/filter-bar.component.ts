@@ -31,6 +31,12 @@ export class FilterBarComponent {
     this.searchText.set((event.target as HTMLInputElement).value);
   }
 
+  clearSearch(searchInput: HTMLInputElement): void {
+    this.searchText.set('');
+    // Keep focus in the field so the user can type a new query right away.
+    searchInput.focus();
+  }
+
   onSortChange(event: Event): void {
     this.sortBy.set((event.target as HTMLSelectElement).value as GroupSort);
   }
