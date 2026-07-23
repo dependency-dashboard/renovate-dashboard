@@ -13,7 +13,7 @@ import {
 /**
  * Sidebar organization switcher: a trigger button summarizing the configured
  * connections, with a CDK-overlay popover for selecting the active org filter
- * and for listing, adding, and removing GitHub organizations.
+ * and for listing, adding, editing, and removing organizations.
  */
 @Component({
   selector: 'app-org-switcher',
@@ -29,13 +29,19 @@ export class OrgSwitcherComponent {
   selectedKeyChange = output<string | null>();
 
   open = signal(false);
-  view = signal<'list' | 'add'>('list');
+  view = signal<'list' | 'form'>('list');
   showAdvanced = signal(false);
+  /** Key of the connection being edited; null while adding a new one. */
+  editingKey = signal<string | null>(null);
   draftPlatform = signal<Platform>('github');
   draftOrg = signal('');
   draftToken = signal('');
   draftHost = signal('');
   draftAuthor = signal('');
+
+  isEditing = computed(() => this.editingKey() !== null);
+  formTitle = computed(() => (this.isEditing() ? 'Edit organization' : 'Add organization'));
+  submitLabel = computed(() => (this.isEditing() ? 'Save changes' : 'Add organization'));
 
   readonly platforms: { value: Platform; label: string }[] = [
     { value: 'github', label: 'GitHub' },
@@ -151,11 +157,12 @@ export class OrgSwitcherComponent {
   isDuplicateOrg = computed(() => {
     // Identity is platform + host + org (orgs are case-insensitive); the same
     // org name on a different server or platform is a distinct connection.
+    // When editing, the connection being edited is not its own duplicate.
     const organization = this.draftOrg().trim();
     const host = this.draftHostNormalized();
     if (!organization || !host) return false;
     const key = connectionKey({ platform: this.draftPlatform(), host, organization });
-    return this.connections().some(c => connectionKey(c) === key);
+    return key !== this.editingKey() && this.connections().some(c => connectionKey(c) === key);
   });
 
   setDraftPlatform(platform: Platform): void {
@@ -174,7 +181,7 @@ export class OrgSwitcherComponent {
     } else {
       // With nothing configured yet, the list view would be empty — go straight
       // to the add form.
-      this.view.set(this.connections().length === 0 ? 'add' : 'list');
+      this.view.set(this.connections().length === 0 ? 'form' : 'list');
       this.open.set(true);
     }
   }
@@ -187,10 +194,24 @@ export class OrgSwitcherComponent {
 
   showAddView(): void {
     this.resetDraft();
-    this.view.set('add');
+    this.view.set('form');
+  }
+
+  showEditView(conn: OrgConnection): void {
+    this.editingKey.set(connectionKey(conn));
+    this.draftPlatform.set(conn.platform);
+    this.draftOrg.set(conn.organization);
+    this.draftToken.set(conn.token);
+    const isDefaultHost = conn.host === defaultHostFor(conn.platform);
+    this.draftHost.set(isDefaultHost ? '' : conn.host);
+    this.draftAuthor.set(conn.renovateAuthor ?? '');
+    // Surface the advanced fields when they hold values worth reviewing.
+    this.showAdvanced.set(!isDefaultHost || !!conn.renovateAuthor);
+    this.view.set('form');
   }
 
   showListView(): void {
+    this.resetDraft();
     this.view.set('list');
   }
 
@@ -220,7 +241,7 @@ export class OrgSwitcherComponent {
     this.draftAuthor.set((event.target as HTMLInputElement).value);
   }
 
-  addConnection(): void {
+  saveConnection(): void {
     if (!this.draftValid()) return;
     const host = this.draftHostNormalized() ?? defaultHostFor(this.draftPlatform());
     const renovateAuthor = this.draftAuthor().trim();
@@ -231,14 +252,29 @@ export class OrgSwitcherComponent {
       token: this.draftToken().trim(),
       ...(renovateAuthor ? { renovateAuthor } : {}),
     };
-    this.connectionsChange.emit([...this.connections(), connection]);
+
+    const editingKey = this.editingKey();
+    if (editingKey) {
+      // Follow the edited connection with the org filter if it was active and
+      // its identity changed — emitted before the list so the parent never
+      // sees a selected key that matches no connection.
+      const newKey = connectionKey(connection);
+      if (this.selectedKey() === editingKey && newKey !== editingKey) {
+        this.selectedKeyChange.emit(newKey);
+      }
+      this.connectionsChange.emit(
+        this.connections().map(c => (connectionKey(c) === editingKey ? connection : c)),
+      );
+    } else {
+      this.connectionsChange.emit([...this.connections(), connection]);
+    }
     // Close so the refreshed results are immediately visible.
     this.close();
   }
 
-  onAddSubmit(event: Event): void {
+  onFormSubmit(event: Event): void {
     event.preventDefault();
-    this.addConnection();
+    this.saveConnection();
   }
 
   removeConnection(conn: OrgConnection): void {
@@ -247,6 +283,7 @@ export class OrgSwitcherComponent {
   }
 
   private resetDraft(): void {
+    this.editingKey.set(null);
     this.draftPlatform.set('github');
     this.draftOrg.set('');
     this.draftToken.set('');
