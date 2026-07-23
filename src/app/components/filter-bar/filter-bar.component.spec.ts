@@ -30,6 +30,31 @@ describe('FilterBarComponent', () => {
     expect(fixture.componentInstance.searchText()).toBe('ruby');
   });
 
+  it('shows a clear button only while the search box has text', () => {
+    const fixture = TestBed.createComponent(FilterBarComponent);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[aria-label="Clear search"]')).toBeNull();
+
+    fixture.componentInstance.searchText.set('ruby');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[aria-label="Clear search"]')).not.toBeNull();
+  });
+
+  it('clears the search and refocuses the input when the clear button is clicked', () => {
+    const fixture = TestBed.createComponent(FilterBarComponent);
+    fixture.componentInstance.searchText.set('ruby');
+    fixture.detectChanges();
+
+    (fixture.nativeElement.querySelector('[aria-label="Clear search"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.searchText()).toBe('');
+    expect(fixture.nativeElement.querySelector('[aria-label="Clear search"]')).toBeNull();
+    expect(document.activeElement).toBe(fixture.nativeElement.querySelector('input'));
+  });
+
   it('sets the status when a segmented-control tab is clicked', () => {
     const fixture = TestBed.createComponent(FilterBarComponent);
     fixture.detectChanges();
