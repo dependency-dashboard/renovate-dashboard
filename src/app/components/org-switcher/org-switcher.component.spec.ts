@@ -136,7 +136,7 @@ describe('OrgSwitcherComponent', () => {
       const fixture = createFixture([]);
       openPopover(fixture);
 
-      expect(fixture.componentInstance.view()).toBe('add');
+      expect(fixture.componentInstance.view()).toBe('form');
       expect(overlayEl.querySelector('#draft-org')).not.toBeNull();
     });
 
@@ -322,9 +322,21 @@ describe('OrgSwitcherComponent', () => {
       const emitted: OrgConnection[][] = [];
       fixture.componentInstance.connectionsChange.subscribe((v: OrgConnection[]) => emitted.push(v));
 
-      fixture.componentInstance.addConnection();
+      fixture.componentInstance.saveConnection();
 
       expect(emitted).toHaveLength(0);
+    });
+
+    it('resets a pending draft when navigating back to the list', () => {
+      const fixture = createFixture([ORG_A]);
+      openPopover(fixture);
+      fixture.componentInstance.showAddView();
+      fixture.componentInstance.draftOrg.set('pending');
+
+      fixture.componentInstance.showListView();
+
+      expect(fixture.componentInstance.draftOrg()).toBe('');
+      expect(fixture.componentInstance.editingKey()).toBeNull();
     });
 
     it('shows a back button to the list only when orgs already exist', () => {
@@ -339,6 +351,128 @@ describe('OrgSwitcherComponent', () => {
       const withoutOrgs = createFixture([]);
       openPopover(withoutOrgs);
       expect(overlayEl.querySelector('[aria-label="Back to organization list"]')).toBeNull();
+    });
+  });
+
+  describe('edit organization', () => {
+    const GHES_ORG: OrgConnection = {
+      platform: 'github',
+      host: 'https://ghes.example.com',
+      organization: 'ghes-org',
+      token: 'ghp_ghes',
+      renovateAuthor: 'renovate-bot',
+    };
+
+    function openEditForm(fixture: ReturnType<typeof createFixture>, org: string) {
+      openPopover(fixture);
+      (overlayEl.querySelector(`[aria-label="Edit ${org}"]`) as HTMLButtonElement).click();
+      fixture.detectChanges();
+    }
+
+    it('renders an edit button for each connection', () => {
+      const fixture = createFixture([ORG_A, ORG_B]);
+      openPopover(fixture);
+
+      expect(overlayEl.querySelector('[aria-label="Edit org-a"]')).not.toBeNull();
+      expect(overlayEl.querySelector('[aria-label="Edit org-b"]')).not.toBeNull();
+    });
+
+    it('opens the form prefilled with the connection values', () => {
+      const fixture = createFixture([ORG_A]);
+      openEditForm(fixture, 'org-a');
+
+      const instance = fixture.componentInstance;
+      expect(instance.view()).toBe('form');
+      expect(instance.editingKey()).toBe(connectionKey(ORG_A));
+      expect(instance.draftOrg()).toBe('org-a');
+      expect(instance.draftToken()).toBe('ghp_aaa');
+      // Default host: the advanced section stays collapsed with an empty host field.
+      expect(instance.draftHost()).toBe('');
+      expect(instance.showAdvanced()).toBe(false);
+      expect(overlayEl.textContent).toContain('Edit organization');
+      expect(overlayEl.querySelector('button[type="submit"]')?.textContent).toContain('Save changes');
+    });
+
+    it('prefills host and author and expands the advanced section for a GHES connection', () => {
+      const fixture = createFixture([GHES_ORG]);
+      openEditForm(fixture, 'ghes-org');
+
+      const instance = fixture.componentInstance;
+      expect(instance.draftHost()).toBe('https://ghes.example.com');
+      expect(instance.draftAuthor()).toBe('renovate-bot');
+      expect(instance.showAdvanced()).toBe(true);
+    });
+
+    it('does not flag the edited connection as a duplicate of itself', () => {
+      const fixture = createFixture([ORG_A, ORG_B]);
+      openEditForm(fixture, 'org-a');
+
+      expect(fixture.componentInstance.isDuplicateOrg()).toBe(false);
+      expect(fixture.componentInstance.draftValid()).toBe(true);
+    });
+
+    it('still flags a collision with a different existing connection', () => {
+      const fixture = createFixture([ORG_A, ORG_B]);
+      openEditForm(fixture, 'org-a');
+      fixture.componentInstance.draftOrg.set('org-b');
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.isDuplicateOrg()).toBe(true);
+      expect(overlayEl.textContent).toContain('Already added');
+    });
+
+    it('replaces the connection in place on submit and closes the popover', () => {
+      const fixture = createFixture([ORG_A, ORG_B]);
+      openEditForm(fixture, 'org-a');
+      fixture.componentInstance.draftToken.set('ghp_rotated');
+      fixture.detectChanges();
+
+      const emitted: OrgConnection[][] = [];
+      fixture.componentInstance.connectionsChange.subscribe((v: OrgConnection[]) => emitted.push(v));
+
+      (overlayEl.querySelector('form') as HTMLFormElement).dispatchEvent(new Event('submit'));
+      fixture.detectChanges();
+
+      expect(emitted).toEqual([[{ ...ORG_A, token: 'ghp_rotated' }, ORG_B]]);
+      expect(fixture.componentInstance.open()).toBe(false);
+      expect(fixture.componentInstance.editingKey()).toBeNull();
+    });
+
+    it('re-points the org filter when the active connection is renamed', () => {
+      const fixture = createFixture([ORG_A, ORG_B]);
+      fixture.componentRef.setInput('selectedKey', connectionKey(ORG_A));
+      fixture.detectChanges();
+      openEditForm(fixture, 'org-a');
+      fixture.componentInstance.draftOrg.set('org-a-renamed');
+
+      const events: { kind: string; value: unknown }[] = [];
+      fixture.componentInstance.selectedKeyChange.subscribe((v: string | null) =>
+        events.push({ kind: 'selectedKey', value: v }));
+      fixture.componentInstance.connectionsChange.subscribe((v: OrgConnection[]) =>
+        events.push({ kind: 'connections', value: v }));
+
+      fixture.componentInstance.saveConnection();
+
+      // The new selected key must arrive before the connection list so the
+      // parent never holds a key that matches no connection.
+      expect(events.map(e => e.kind)).toEqual(['selectedKey', 'connections']);
+      expect(events[0].value).toBe(connectionKey({ ...ORG_A, organization: 'org-a-renamed' }));
+      expect(events[1].value).toEqual([{ ...ORG_A, organization: 'org-a-renamed' }, ORG_B]);
+    });
+
+    it('does not touch the org filter when editing a non-selected connection', () => {
+      const fixture = createFixture([ORG_A, ORG_B]);
+      fixture.componentRef.setInput('selectedKey', connectionKey(ORG_B));
+      fixture.detectChanges();
+      openEditForm(fixture, 'org-a');
+      fixture.componentInstance.draftOrg.set('org-a-renamed');
+
+      const selectedKeys: (string | null)[] = [];
+      fixture.componentInstance.selectedKeyChange.subscribe((v: string | null) => selectedKeys.push(v));
+
+      fixture.componentInstance.saveConnection();
+
+      expect(selectedKeys).toHaveLength(0);
     });
   });
 });
