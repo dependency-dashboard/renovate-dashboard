@@ -111,6 +111,8 @@ export interface GitHubCheckRunsResponse {
 
 export interface GitHubCombinedStatusResponse {
   state: 'success' | 'failure' | 'pending' | 'error';
+  /** Number of commit statuses; the API reports state "pending" even when this is 0. */
+  total_count: number;
 }
 
 export interface PullRequest {
