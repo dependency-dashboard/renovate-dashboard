@@ -90,10 +90,13 @@ export class GitHubProviderService implements GitProvider {
       pr.allowMergeCommit = repoData.allow_merge_commit;
       pr.allowRebaseMerge = repoData.allow_rebase_merge;
 
-      // Get combined CI status for the PR's head commit (as a fallback)
+      // Get combined CI status for the PR's head commit (as a fallback).
+      // A commit with no statuses at all still reports state "pending", so
+      // only trust the state when at least one status exists — otherwise a
+      // repo without CI would show every PR as running.
       const statusUrl = `${apiBase}/repos/${pr.repoOwner}/${pr.repoName}/commits/${pr.head.sha}/status`;
       const statusData = await this.apiRequest<GitHubCombinedStatusResponse>(statusUrl, pr.orgToken);
-      pr.ciStatus = this.mapCombinedStatus(statusData.state);
+      pr.ciStatus = statusData.total_count === 0 ? 'unknown' : this.mapCombinedStatus(statusData.state);
 
       // Get individual check runs for more detailed status
       const checksUrl = `${apiBase}/repos/${pr.repoOwner}/${pr.repoName}/commits/${pr.head.sha}/check-runs`;

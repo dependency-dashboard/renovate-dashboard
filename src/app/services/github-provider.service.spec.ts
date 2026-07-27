@@ -191,11 +191,12 @@ describe('GitHubProviderService', () => {
       commits?: number;
       checkRuns?: object[];
       combinedState?: string;
+      statusCount?: number;
     } = {}) {
       return [
         jsonResponse({ commits: overrides.commits ?? 1, head: { sha: 'sha-1' } }),
         jsonResponse({ allow_squash_merge: true, allow_merge_commit: true, allow_rebase_merge: true }),
-        jsonResponse({ state: overrides.combinedState ?? 'pending' }),
+        jsonResponse({ state: overrides.combinedState ?? 'pending', total_count: overrides.statusCount ?? 1 }),
         jsonResponse({ total_count: (overrides.checkRuns ?? []).length, check_runs: overrides.checkRuns ?? [] }),
       ];
     }
@@ -251,6 +252,21 @@ describe('GitHubProviderService', () => {
       expect(pr.workflowStatus).toBe('success');
     });
 
+    it('reports unknown, not pending, for a repo with no CI at all', async () => {
+      // GitHub's combined-status endpoint returns state "pending" for a
+      // commit that has zero statuses; without special-casing total_count 0,
+      // PRs in repos without any CI show as "Running" forever.
+      const responses = detailResponses({ combinedState: 'pending', statusCount: 0, checkRuns: [] });
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+      responses.forEach(r => fetchSpy.mockResolvedValueOnce(r));
+
+      const pr = makePr();
+      await provider.fetchPrDetails(pr);
+
+      expect(pr.ciStatus).toBe('unknown');
+      expect(pr.workflowStatus).toBe('unknown');
+    });
+
     it('leaves statuses unknown and never throws when a request fails', async () => {
       vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network down'));
 
@@ -275,7 +291,7 @@ describe('GitHubProviderService', () => {
           return Promise.resolve(jsonResponse({ commits: 1, head: { sha: 'sha-1' } }));
         }
         if (u.includes('/status')) {
-          return Promise.resolve(jsonResponse({ state: 'success' }));
+          return Promise.resolve(jsonResponse({ state: 'success', total_count: 1 }));
         }
         return Promise.resolve(jsonResponse({ total_count: 0, check_runs: [] }));
       });
@@ -306,7 +322,7 @@ describe('GitHubProviderService', () => {
           return Promise.resolve(jsonResponse({ commits: 1, head: { sha: 'sha-1' } }));
         }
         if (u.includes('/status')) {
-          return Promise.resolve(jsonResponse({ state: 'success' }));
+          return Promise.resolve(jsonResponse({ state: 'success', total_count: 1 }));
         }
         return Promise.resolve(jsonResponse({ total_count: 0, check_runs: [] }));
       });
