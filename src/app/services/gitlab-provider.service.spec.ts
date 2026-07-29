@@ -213,16 +213,17 @@ describe('GitLabProviderService', () => {
   });
 
   describe('approveAndMerge', () => {
-    it('approves then merges, squashing multi-commit MRs', async () => {
+    it('approves, reads project settings, then merges, squashing multi-commit MRs', async () => {
       const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(jsonResponse({})));
 
       await provider.approveAndMerge(makeMrPr({ commits: 3 }));
 
       const calls = fetchSpy.mock.calls;
       expect(String(calls[0][0])).toBe('https://gitlab.com/api/v4/projects/42/merge_requests/10/approve');
-      expect(String(calls[1][0])).toBe('https://gitlab.com/api/v4/projects/42/merge_requests/10/merge');
-      expect((calls[1][1] as RequestInit).method).toBe('PUT');
-      expect((calls[1][1] as RequestInit).body).toContain('"squash":true');
+      expect(String(calls[1][0])).toBe('https://gitlab.com/api/v4/projects/42');
+      expect(String(calls[2][0])).toBe('https://gitlab.com/api/v4/projects/42/merge_requests/10/merge');
+      expect((calls[2][1] as RequestInit).method).toBe('PUT');
+      expect((calls[2][1] as RequestInit).body).toContain('"squash":true');
     });
 
     it('does not squash single-commit MRs', async () => {
@@ -230,17 +231,16 @@ describe('GitLabProviderService', () => {
 
       await provider.approveAndMerge(makeMrPr({ commits: 1 }));
 
-      expect((fetchSpy.mock.calls[1][1] as RequestInit).body).toContain('"squash":false');
+      expect((fetchSpy.mock.calls[2][1] as RequestInit).body).toContain('"squash":false');
     });
 
     it('merges anyway when approval is unavailable (Premium-only endpoint)', async () => {
-      const fetchSpy = vi.spyOn(globalThis, 'fetch')
-        .mockResolvedValueOnce(jsonResponse({ message: '404 Not Found' }, 404))
-        .mockResolvedValueOnce(jsonResponse({}));
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(jsonResponse({})));
+      fetchSpy.mockResolvedValueOnce(jsonResponse({ message: '404 Not Found' }, 404));
 
       await provider.approveAndMerge(makeMrPr());
 
-      expect(String(fetchSpy.mock.calls[1][0])).toContain('/merge');
+      expect(String(fetchSpy.mock.calls[2][0])).toContain('/merge');
     });
 
     it('propagates non-authorization approval failures without merging', async () => {
@@ -254,9 +254,87 @@ describe('GitLabProviderService', () => {
     it('propagates merge failures', async () => {
       vi.spyOn(globalThis, 'fetch')
         .mockResolvedValueOnce(jsonResponse({})) // approve ok
+        .mockResolvedValueOnce(jsonResponse({})) // project settings ok
         .mockResolvedValueOnce(jsonResponse({ message: 'Branch cannot be merged' }, 406));
 
       await expect(provider.approveAndMerge(makeMrPr())).rejects.toThrow('Branch cannot be merged');
+    });
+  });
+
+  describe('merge trains', () => {
+    function routeFetch(project: object, counters?: { settings: number }) {
+      return vi.spyOn(globalThis, 'fetch').mockImplementation(url => {
+        if (/\/api\/v4\/projects\/\d+$/.test(String(url))) {
+          if (counters) counters.settings++;
+          return Promise.resolve(jsonResponse(project));
+        }
+        return Promise.resolve(jsonResponse({}));
+      });
+    }
+
+    it('adds the MR to the merge train instead of merging when merge trains are enabled', async () => {
+      const fetchSpy = routeFetch({ merge_trains_enabled: true });
+
+      await provider.approveAndMerge(makeMrPr({ commits: 3 }));
+
+      const urls = fetchSpy.mock.calls.map(c => String(c[0]));
+      expect(urls).toContain('https://gitlab.com/api/v4/projects/42/merge_trains/merge_requests/10');
+      expect(urls.some(u => u.endsWith('/merge'))).toBe(false);
+
+      const trainCall = fetchSpy.mock.calls.find(c => String(c[0]).includes('/merge_trains/'))!;
+      expect((trainCall[1] as RequestInit).method).toBe('POST');
+      expect((trainCall[1] as RequestInit).body).toContain('"when_pipeline_succeeds":true');
+      expect((trainCall[1] as RequestInit).body).toContain('"squash":true');
+    });
+
+    it('merges directly when merge trains are disabled or the field is absent (Free tier)', async () => {
+      const fetchSpy = routeFetch({ merge_trains_enabled: false });
+
+      await provider.approveAndMerge(makeMrPr());
+
+      const urls = fetchSpy.mock.calls.map(c => String(c[0]));
+      expect(urls.some(u => u.endsWith('/merge'))).toBe(true);
+      expect(urls.some(u => u.includes('/merge_trains/'))).toBe(false);
+    });
+
+    it('fetches project settings once per project across merges', async () => {
+      const counters = { settings: 0 };
+      routeFetch({ merge_trains_enabled: true }, counters);
+
+      await provider.approveAndMerge(makeMrPr({ id: 1, number: 10 }));
+      await provider.approveAndMerge(makeMrPr({ id: 2, number: 11 }));
+
+      expect(counters.settings).toBe(1);
+    });
+
+    it('fails the merge rather than bypassing a possible train when settings cannot be read', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(url => {
+        if (/\/api\/v4\/projects\/\d+$/.test(String(url))) {
+          return Promise.resolve(jsonResponse({ message: 'server exploded' }, 500));
+        }
+        return Promise.resolve(jsonResponse({}));
+      });
+
+      await expect(provider.approveAndMerge(makeMrPr())).rejects.toThrow('server exploded');
+      expect(fetchSpy.mock.calls.map(c => String(c[0])).some(u => u.endsWith('/merge'))).toBe(false);
+    });
+
+    it('does not cache failed settings fetches', async () => {
+      let settingsCalls = 0;
+      vi.spyOn(globalThis, 'fetch').mockImplementation(url => {
+        if (/\/api\/v4\/projects\/\d+$/.test(String(url))) {
+          settingsCalls++;
+          return settingsCalls === 1
+            ? Promise.resolve(jsonResponse({ message: 'flaky' }, 500))
+            : Promise.resolve(jsonResponse({ merge_trains_enabled: false }));
+        }
+        return Promise.resolve(jsonResponse({}));
+      });
+
+      await expect(provider.approveAndMerge(makeMrPr())).rejects.toThrow('flaky');
+      await provider.approveAndMerge(makeMrPr());
+
+      expect(settingsCalls).toBe(2);
     });
   });
 

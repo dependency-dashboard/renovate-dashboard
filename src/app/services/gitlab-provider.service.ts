@@ -24,9 +24,19 @@ interface GitLabPipelineJob {
   web_url: string;
 }
 
+/** Subset of the Projects API response that affects merge behavior. */
+interface GitLabProject {
+  merge_trains_enabled?: boolean;
+}
+
 /** GitProvider implementation for gitlab.com and self-hosted GitLab (REST v4 API). */
 @Injectable({ providedIn: 'root' })
 export class GitLabProviderService implements GitProvider {
+  // Merge-train configuration is per-project and rarely changes; cache the
+  // promise for the service lifetime. Storing the promise also dedupes
+  // concurrent fetches during a bulk merge.
+  private projectSettingsCache = new Map<string, Promise<GitLabProject>>();
+
   async searchRenovatePrs(connection: OrgConnection): Promise<ProviderSearchResult> {
     const author = connection.renovateAuthor?.trim() || DEFAULT_RENOVATE_AUTHOR;
     const groupPath = encodeURIComponent(connection.organization);
@@ -112,11 +122,28 @@ export class GitLabProviderService implements GitProvider {
       }
     }
 
-    // The project's merge-method settings are enforced server-side; squash
-    // multi-commit MRs to mirror the GitHub provider's behavior.
-    await this.apiRequest<void>(`${mrBase}/merge`, pr.orgToken, 'PUT', {
-      squash: (pr.commits ?? 1) > 1,
-    });
+    // Squash multi-commit MRs to mirror the GitHub provider's behavior; the
+    // project's merge-method settings are enforced server-side.
+    const squash = (pr.commits ?? 1) > 1;
+
+    // Merging directly on a project with merge trains enabled bypasses the
+    // train, so such MRs must be added to the train instead. If the project
+    // settings cannot be read, fail rather than risk skipping the train.
+    const project = await this.getProjectSettings(pr);
+    if (project.merge_trains_enabled) {
+      await this.apiRequest<void>(
+        `${pr.host}/api/v4/projects/${pr.projectId}/merge_trains/merge_requests/${pr.number}`,
+        pr.orgToken,
+        'POST',
+        // when_pipeline_succeeds also covers MRs whose pipeline is still
+        // running; with an already-successful pipeline the MR is added
+        // to the train immediately.
+        { when_pipeline_succeeds: true, squash },
+      );
+      return;
+    }
+
+    await this.apiRequest<void>(`${mrBase}/merge`, pr.orgToken, 'PUT', { squash });
   }
 
   async close(pr: PullRequest): Promise<void> {
@@ -162,6 +189,18 @@ export class GitLabProviderService implements GitProvider {
 
   private mrApiBase(pr: PullRequest): string {
     return `${pr.host}/api/v4/projects/${pr.projectId}/merge_requests/${pr.number}`;
+  }
+
+  private getProjectSettings(pr: PullRequest): Promise<GitLabProject> {
+    const key = `${pr.host}|${pr.projectId}`;
+    let settings = this.projectSettingsCache.get(key);
+    if (!settings) {
+      settings = this.apiRequest<GitLabProject>(`${pr.host}/api/v4/projects/${pr.projectId}`, pr.orgToken);
+      this.projectSettingsCache.set(key, settings);
+      // Don't cache failures — the next merge attempt should retry.
+      settings.catch(() => this.projectSettingsCache.delete(key));
+    }
+    return settings;
   }
 
   private mapPipelineStatus(status: string | undefined): CiStatus {
