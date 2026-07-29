@@ -139,10 +139,11 @@ for (const contract of CONTRACTS) {
     });
 
     it('approveAndMerge rejects when the merge fails', async () => {
-      // First call (approve) succeeds, second (merge) fails.
-      vi.spyOn(globalThis, 'fetch')
-        .mockResolvedValueOnce(new Response('{}', { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ message: 'merge blocked' }), { status: 405 }));
+      // Every request succeeds except the merge itself.
+      vi.spyOn(globalThis, 'fetch').mockImplementation(url =>
+        Promise.resolve(String(url).endsWith('/merge')
+          ? new Response(JSON.stringify({ message: 'merge blocked' }), { status: 405 })
+          : new Response('{}', { status: 200 })));
 
       await expect(provider.approveAndMerge(contract.makePr())).rejects.toThrow();
     });
