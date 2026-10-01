@@ -45,8 +45,8 @@
     "@angular/compiler-cli": "^22.0.7",
     "@eslint/js": "^10.0.1",
     "@tailwindcss/postcss": "^4.1.13",
-    "@vitest/coverage-v8": "^4.0.8",
-    "@vitest/ui": "^4.0.8",
+    "@vitest/coverage-v8": "^5.0.0",
+    "@vitest/ui": "^5.0.0",
     "angular-eslint": "22.5.0",
     "autoprefixer": "^10.4.21",
     "eslint": "^10.0.0",
@@ -55,6 +55,6 @@
     "tailwindcss": "^4.1.13",
     "typescript": "~6.0.3",
     "typescript-eslint": "8.70.1",
-    "vitest": "^4.0.8"
+    "vitest": "^5.0.0"
   }
 }
